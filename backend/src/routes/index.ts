@@ -1,0 +1,40 @@
+import { FastifyPluginAsync } from 'fastify';
+import authRoutes from './auth.routes';
+import eigentuemerRoutes from './eigentuemer.routes';
+import mietobjektRoutes from './mietobjekt.routes';
+import mieteinheitRoutes from './mieteinheit.routes';
+import mieterRoutes from './mieter.routes';
+import mietvertragRoutes from './mietvertrag.routes';
+import kostenRoutes from './kosten.routes';
+import mietzahlungRoutes from './mietzahlung.routes';
+import nebenkostenRoutes from './nebenkosten.routes';
+import dashboardRoutes from './dashboard.routes';
+import benutzerRoutes from './benutzer.routes';
+import einstellungenRoutes from './einstellungen.routes';
+import kontaktRoutes from './kontakt.routes';
+import forderungRoutes from './forderung.routes';
+import mahnungRoutes from './mahnung.routes';
+import fristRoutes from './frist.routes';
+import dokumentRoutes from './dokument.routes';
+
+const routes: FastifyPluginAsync = async (server) => {
+  server.register(authRoutes, { prefix: '/auth' });
+  server.register(eigentuemerRoutes, { prefix: '/eigentuemer' });
+  server.register(mietobjektRoutes, { prefix: '/mietobjekte' });
+  server.register(mieteinheitRoutes, { prefix: '/mieteinheiten' });
+  server.register(mieterRoutes, { prefix: '/mieter' });
+  server.register(mietvertragRoutes, { prefix: '/mietvertraege' });
+  server.register(kostenRoutes, { prefix: '/kosten' });
+  server.register(mietzahlungRoutes, { prefix: '/mietzahlungen' });
+  server.register(nebenkostenRoutes, { prefix: '/nebenkosten' });
+  server.register(dashboardRoutes, { prefix: '/dashboard' });
+  server.register(benutzerRoutes, { prefix: '/benutzer' });
+  server.register(einstellungenRoutes, { prefix: '/einstellungen' });
+  server.register(kontaktRoutes, { prefix: '/kontakte' });
+  server.register(forderungRoutes, { prefix: '/forderungen' });
+  server.register(mahnungRoutes, { prefix: '/mahnungen' });
+  server.register(fristRoutes, { prefix: '/fristen' });
+  server.register(dokumentRoutes, { prefix: '/dokumente' });
+};
+
+export default routes;

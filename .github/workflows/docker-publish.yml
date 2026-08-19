@@ -1,0 +1,79 @@
+name: Pruefen
+
+on:
+  push:
+    branches:
+      - master
+      - 'feature/**'
+  workflow_dispatch:
+
+jobs:
+  # Lint, Unit-Tests und Build fuer das Backend, danach werden alle Migrationen
+  # in eine echte PostgreSQL-16-Instanz eingespielt und das Verhalten des
+  # Suchindex geprueft. Ein Fehler in einer Migration faellt sonst erst beim
+  # Deploy auf und blockiert diesen komplett, weil der Backend-Container die
+  # Migrationen beim Start anwendet.
+  pruefen:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: pruefung
+          POSTGRES_DB: mietverwaltung_pruefung
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:pruefung@localhost:5432/mietverwaltung_pruefung
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Abhaengigkeiten installieren
+        working-directory: backend
+        run: npm ci
+
+      - name: Prisma-Client erzeugen
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Lint
+        working-directory: backend
+        run: npm run lint
+
+      - name: Unit-Tests
+        working-directory: backend
+        run: npm test
+
+      - name: Build
+        working-directory: backend
+        run: npm run build
+
+      # Bewusst mit psql statt "prisma migrate deploy": so laufen die Dateien
+      # genau in der Form, in der sie im Repo stehen, ohne dass Prisma etwas
+      # dazwischen uebersetzt. Reihenfolge ist die lexikografische der Ordner.
+      - name: Migrationen der Reihe nach einspielen
+        run: |
+          set -euo pipefail
+          for datei in backend/prisma/migrations/*/migration.sql; do
+            echo "--- $datei"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$datei"
+          done
+
+      # Prueft das Verhalten des Suchindex-Triggers: fuellt er den Vektor, laesst
+      # er reine Statuswechsel in Ruhe, faengt er den Ueberlauf ab. Statisches
+      # Lesen hat hier bereits zweimal etwas uebersehen.
+      - name: Verhalten des Suchindex-Triggers pruefen
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/prisma/tests/suchindex.test.sql

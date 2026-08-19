@@ -1,0 +1,30 @@
+# NUR für lokale Entwicklung — wird NICHT automatisch geladen.
+# (Früher docker-compose.override.yml: die wurde von docker compose automatisch
+#  gemerged und hat auf Servern versehentlich den Dev-Modus gestartet und
+#  die Ports 5432/3000 nach außen geöffnet.)
+#
+# Lokale Entwicklung starten mit:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Auf Servern einfach: docker compose up --build -d
+
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      target: development
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+    ports:
+      - "3000:3000"
+    command: npm run dev
+
+  frontend:
+    build:
+      target: builder

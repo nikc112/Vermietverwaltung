@@ -1,0 +1,113 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mietverwaltung_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mietverwaltung}
+      POSTGRES_USER: ${POSTGRES_USER:-mietuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mietuser} -d ${POSTGRES_DB:-mietverwaltung}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Ohne Begrenzung wachsen die Protokolldateien unbegrenzt und fuellen
+    # irgendwann die Platte -- auf einem Server, der laenger laeuft, eine Frage
+    # der Zeit und nicht des Ob.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - mietnet
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: mietverwaltung_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mietuser}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mietverwaltung}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Mietverwaltung <noreply@example.com>}
+      APP_URL: ${APP_URL:-http://localhost}
+      PDF_STORAGE_PATH: /app/storage/pdfs
+      DOKUMENT_STORAGE_PATH: /app/storage/dokumente
+      # Adressen der vorgelagerten Proxys. Steht ein Reverse Proxy auf einer
+      # anderen Maschine davor, dessen Adresse hier ergaenzen — sonst wird sein
+      # X-Forwarded-For verworfen und alle Nutzer gelten als ein Absender.
+      TRUST_PROXY: ${TRUST_PROXY:-127.0.0.1, ::1, 172.16.0.0/12}
+      NODE_ENV: production
+      # Bewusst OHNE Vorgabewerte: der Container bricht ab, wenn sie fehlen.
+      # Ein Vorgabepasswort in einem oeffentlichen Repository waere fuer jede
+      # Installation dasselbe -- und damit fuer jeden bekannt, der es vergisst.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL muss in der .env gesetzt sein}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD muss in der .env gesetzt sein}
+    volumes:
+      - pdf_storage:/app/storage/pdfs
+      - ${DOKUMENT_PFAD:-/data/mietverwaltung/dokumente}:/app/storage/dokumente
+    expose:
+      - "3000"
+    # Ohne diesen Test gilt ein Backend, das zwar laeuft aber nicht mehr
+    # antwortet, weiterhin als gesund -- und niemand bemerkt es.
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    # Ohne Begrenzung wachsen die Protokolldateien unbegrenzt und fuellen
+    # irgendwann die Platte -- auf einem Server, der laenger laeuft, eine Frage
+    # der Zeit und nicht des Ob.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - mietnet
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mietverwaltung_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${APP_PORT:-80}:80"
+    # Ohne Begrenzung wachsen die Protokolldateien unbegrenzt und fuellen
+    # irgendwann die Platte -- auf einem Server, der laenger laeuft, eine Frage
+    # der Zeit und nicht des Ob.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - mietnet
+
+volumes:
+  db_data:
+  pdf_storage:
+
+networks:
+  mietnet:
+    driver: bridge

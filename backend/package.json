@@ -1,0 +1,42 @@
+{
+  "name": "mietverwaltung-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/server.js",
+    "lint": "eslint .",
+    "test": "vitest run src",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/jwt": "^8.0.1",
+    "@fastify/multipart": "^8.3.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/static": "^7.0.4",
+    "@prisma/client": "^5.20.0",
+    "bcryptjs": "^2.4.3",
+    "dayjs": "^1.11.13",
+    "fastify": "^4.28.1",
+    "fastify-plugin": "^4.5.1",
+    "nodemailer": "^6.9.15",
+    "pdfmake": "^0.2.10",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.17.6",
+    "@types/nodemailer": "^6.4.16",
+    "@types/pdfmake": "^0.2.9",
+    "eslint": "^9.39.5",
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,605 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Authentifizierung ────────────────────────────────────────────────────────
+
+model Benutzer {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique
+  passwordHash   String
+  name           String
+  rolle          Rolle    @default(VERWALTER)
+  aktiv          Boolean  @default(true)
+  erstelltAm     DateTime @default(now())
+  aktualisiertAm DateTime @updatedAt
+
+  dokumente Dokument[]
+
+  @@map("benutzer")
+}
+
+enum Rolle {
+  ADMIN
+  VOLLZUGRIFF
+  VERTRAGSVERWALTER
+  KOSTENBUCHER
+  VERWALTER
+}
+
+enum Anrede {
+  HERR
+  FRAU
+  DIVERS
+  FIRMA
+}
+
+// ─── Kontakte (zentrale Adressverwaltung) ─────────────────────────────────────
+
+model Kontakt {
+  id              Int       @id @default(autoincrement())
+  anrede          Anrede
+  vorname         String
+  nachname        String
+  firma           String?
+  strasse         String?
+  hausnummer      String?
+  plz             String?
+  ort             String?
+  geburtsdatum    DateTime?
+  iban            String?
+  steuernummer    String?
+  notizen         String?
+  aktiv           Boolean   @default(true)
+  anonymisiertAm  DateTime?
+  erstelltAm      DateTime  @default(now())
+  aktualisiertAm  DateTime  @updatedAt
+
+  rollen          KontaktRolle[]
+  kommunikation   KontaktKommunikation[]
+  ansprechpartner Ansprechpartner[]
+  mietvertraege   Mietvertrag[]
+  mietobjekte     Mietobjekt[]
+  mahnungen       Mahnung[]
+  fristen         Frist[]
+  dokumente       Dokument[]
+
+  @@map("kontakte")
+}
+
+model KontaktRolle {
+  kontaktID Int
+  rolle     KontaktRollenTyp
+  kontakt   Kontakt @relation(fields: [kontaktID], references: [id], onDelete: Cascade)
+
+  @@id([kontaktID, rolle])
+  @@map("kontakt_rollen")
+}
+
+enum KontaktRollenTyp {
+  MIETER
+  EIGENTUEMER
+  DIENSTLEISTER
+  VERSORGER
+  BEHOERDE
+  SONSTIGE
+}
+
+model KontaktKommunikation {
+  id          Int               @id @default(autoincrement())
+  typ         KommunikationsTyp
+  wert        String
+  bezeichnung String?
+  istStandard Boolean           @default(false)
+
+  kontaktID   Int
+  kontakt     Kontakt @relation(fields: [kontaktID], references: [id], onDelete: Cascade)
+
+  @@map("kontakt_kommunikation")
+}
+
+enum KommunikationsTyp {
+  EMAIL
+  TELEFON
+  MOBIL
+  FAX
+  SONSTIGE
+}
+
+model Ansprechpartner {
+  id        Int     @id @default(autoincrement())
+  name      String
+  funktion  String?
+  email     String?
+  telefon   String?
+
+  kontaktID Int
+  kontakt   Kontakt @relation(fields: [kontaktID], references: [id], onDelete: Cascade)
+
+  @@map("ansprechpartner")
+}
+
+// ─── Mietobjekt (Gebäude) ─────────────────────────────────────────────────────
+
+model Mietobjekt {
+  id             Int           @id @default(autoincrement())
+  bezeichnung    String
+  typ            MietobjektTyp
+  strasse        String
+  hausnummer     String
+  plz            String
+  ort            String
+  baujahr        Int?
+  heizungstyp    HeizungsTyp?
+  notizen        String?
+  aktiv          Boolean       @default(true)
+  erstelltAm     DateTime      @default(now())
+  aktualisiertAm DateTime      @updatedAt
+
+  eigentuemerID  Int
+  eigentuemer    Kontakt       @relation(fields: [eigentuemerID], references: [id])
+
+  mieteinheiten  Mieteinheit[]
+  kosten         Kosten[]
+  fristen        Frist[]
+  dokumente      Dokument[]
+
+  @@map("mietobjekte")
+}
+
+enum MietobjektTyp {
+  MEHRFAMILIENHAUS
+  EINFAMILIENHAUS
+  GEWERBEGEBAEUDE
+  GEMISCHT
+  SONSTIGES
+}
+
+enum HeizungsTyp {
+  ZENTRALHEIZUNG
+  ETAGENHEIZUNG
+  FERNWAERME
+  ELEKTRO
+  SONSTIGE
+}
+
+// ─── Mieteinheit (einzelne Wohnung/Einheit) ───────────────────────────────────
+
+model Mieteinheit {
+  id             Int            @id @default(autoincrement())
+  bezeichnung    String
+  typ            MieteinheitTyp
+  flaeche        Decimal        @db.Decimal(8, 2)
+  zimmeranzahl   Decimal?       @db.Decimal(4, 1)
+  etage          String?
+  aktiv          Boolean        @default(true)
+  notizen        String?
+  erstelltAm     DateTime       @default(now())
+  aktualisiertAm DateTime       @updatedAt
+
+  mietobjektID   Int
+  mietobjekt     Mietobjekt     @relation(fields: [mietobjektID], references: [id])
+
+  mietvertraege     Mietvertrag[]
+  kostenZuordnungen KostenUmlageZuordnung[]
+  dokumente         Dokument[]
+
+  @@map("mieteinheiten")
+}
+
+enum MieteinheitTyp {
+  WOHNUNG
+  GEWERBE
+  GARAGE
+  STELLPLATZ
+  SONSTIGES
+}
+
+// ─── Mietvertrag ─────────────────────────────────────────────────────────────
+
+model Mietvertrag {
+  id                       Int           @id @default(autoincrement())
+  vertragsnummer           String        @unique
+  beginn                   DateTime
+  ende                     DateTime?
+  kuendigungsfristMonate   Int           @default(3)
+  kaltmiete                Decimal       @db.Decimal(10, 2)
+  nebenkostenVorauszahlung Decimal       @db.Decimal(10, 2)
+  kaution                  Decimal       @db.Decimal(10, 2)
+  kautionBezahlt           Boolean       @default(false)
+  kautionBezahltAm         DateTime?
+  zahlungstag              Int           @default(1)
+  personenAnzahl           Int           @default(1)
+  status                   VertragStatus @default(AKTIV)
+  notizen                  String?
+  erstelltAm               DateTime      @default(now())
+  aktualisiertAm           DateTime      @updatedAt
+
+  mieteinheitID  Int
+  mieteinheit    Mieteinheit   @relation(fields: [mieteinheitID], references: [id])
+
+  mieterID       Int
+  mieter         Kontakt       @relation(fields: [mieterID], references: [id])
+
+  mietzahlungen           Mietzahlung[]
+  nebenkostenabrechnungen NebenkostenAbrechnung[]
+  fristen                 Frist[]
+  dokumente               Dokument[]
+
+  @@map("mietvertraege")
+}
+
+enum VertragStatus {
+  AKTIV
+  BEENDET
+  GEKUENDIGT
+}
+
+// ─── Mietzahlung ─────────────────────────────────────────────────────────────
+
+model Mietzahlung {
+  id             Int         @id @default(autoincrement())
+  monat          Int
+  jahr           Int
+  sollBetrag     Decimal     @db.Decimal(10, 2)
+  istBetrag      Decimal?    @db.Decimal(10, 2)
+  eingegangen    Boolean     @default(false)
+  eingangsdat    DateTime?
+  zahlungsart    Zahlungsart @default(UEBERWEISUNG)
+  notizen        String?
+  erstelltAm     DateTime    @default(now())
+  aktualisiertAm DateTime    @updatedAt
+
+  mietvertragID  Int
+  mietvertrag    Mietvertrag @relation(fields: [mietvertragID], references: [id])
+
+  mahnungPositionen MahnungPosition[]
+
+  @@unique([mietvertragID, monat, jahr])
+  @@map("mietzahlungen")
+}
+
+enum Zahlungsart {
+  UEBERWEISUNG
+  LASTSCHRIFT
+  BAR
+  SONSTIGE
+}
+
+// ─── Kosten ───────────────────────────────────────────────────────────────────
+
+model Kosten {
+  id                Int               @id @default(autoincrement())
+  bezeichnung       String
+  kategorie         KostenKategorie
+  betrag            Decimal           @db.Decimal(10, 2)
+  datum             DateTime
+  jahr              Int
+  umlagefaehig      Boolean           @default(true)
+  umlageSchluessel  UmlageSchluessel  @default(FLAECHE)
+  umlageSchluessel2 UmlageSchluessel?
+  umlageGewicht1    Decimal?          @db.Decimal(5, 2)
+  umlageArt         UmlageArt         @default(ALLE_EINHEITEN)
+  lohnanteil       Decimal?          @db.Decimal(10, 2)
+  verbrauchswert   Decimal?         @db.Decimal(10, 3)
+  verbrauchEinheit String?
+  belegNummer      String?
+  anbieter         String?
+  notizen          String?
+  erstelltAm       DateTime         @default(now())
+  aktualisiertAm   DateTime         @updatedAt
+
+  mietobjektID     Int
+  mietobjekt       Mietobjekt       @relation(fields: [mietobjektID], references: [id])
+
+  umlageZuordnungen KostenUmlageZuordnung[]
+  dokumente         Dokument[]
+
+  @@map("kosten")
+}
+
+model KostenUmlageZuordnung {
+  kostenID      Int
+  mieteinheitID Int
+
+  kosten      Kosten      @relation(fields: [kostenID], references: [id], onDelete: Cascade)
+  mieteinheit Mieteinheit @relation(fields: [mieteinheitID], references: [id])
+
+  @@id([kostenID, mieteinheitID])
+  @@map("kosten_umlage_zuordnungen")
+}
+
+enum KostenKategorie {
+  GRUNDSTEUER
+  KALTWASSER
+  ABWASSER
+  HEIZUNG
+  WARMWASSER
+  AUFZUG
+  STRASSENREINIGUNG
+  MUELLABFUHR
+  GEBAEUDEREINIGUNG
+  GARTENPFLEGE
+  ALLGEMEINSTROM
+  SCHORNSTEINREINIGUNG
+  GEBAEUDEVERSICHERUNG
+  HAFTPFLICHTVERSICHERUNG
+  HAUSMEISTER
+  KABELFERNSEHEN
+  VERWALTUNGSKOSTEN
+  INSTANDHALTUNG
+  INSTANDSETZUNGSRUECKLAGE
+  BANKGEBUEHREN
+  RECHTSKOSTEN
+  SONSTIGE_UMLAGEFAEHIG
+  SONSTIGE_NICHT_UMLAGEFAEHIG
+}
+
+enum UmlageSchluessel {
+  FLAECHE
+  PERSONEN
+  EINHEIT
+  VERBRAUCH
+}
+
+enum UmlageArt {
+  ALLE_EINHEITEN
+  SPEZIFISCHE_EINHEITEN
+}
+
+// ─── Systemeinstellungen ─────────────────────────────────────────────────────
+
+model Einstellung {
+  schluessel     String   @id
+  wert           String
+  aktualisiertAm DateTime @updatedAt
+
+  @@map("einstellungen")
+}
+
+// ─── Nebenkostenabrechnung ────────────────────────────────────────────────────
+
+model NebenkostenAbrechnung {
+  id               Int       @id @default(autoincrement())
+  abrechnungsjahr  Int
+  abrechnungStart  DateTime?
+  abrechnungEnde   DateTime?
+  gesamtkosten     Decimal   @db.Decimal(10, 2)
+  mieterAnteil     Decimal   @db.Decimal(10, 2)
+  geleisteteVZ     Decimal   @db.Decimal(10, 2)
+  saldo            Decimal   @db.Decimal(10, 2)
+  pdfPfad          String?
+  versandtAm       DateTime?
+  versandFehlerlog String?
+  versandVersuche  Int       @default(0)
+  notizen          String?
+  nachzahlungBeglichenAm DateTime?
+  erstelltAm       DateTime  @default(now())
+  aktualisiertAm   DateTime  @updatedAt
+
+  mietvertragID   Int
+  mietvertrag     Mietvertrag @relation(fields: [mietvertragID], references: [id])
+
+  positionen      NebenkostenPosition[]
+  mahnungPositionen MahnungPosition[]
+  dokumente         Dokument[]
+
+  @@unique([mietvertragID, abrechnungsjahr])
+  @@map("nebenkostenabrechnungen")
+}
+
+model NebenkostenPosition {
+  id               Int              @id @default(autoincrement())
+  kategorie        KostenKategorie
+  bezeichnung      String
+  gesamtkosten     Decimal          @db.Decimal(10, 2)
+  umlageSchluessel UmlageSchluessel
+  anteilFaktor     Decimal          @db.Decimal(10, 6)
+  zeitraumFaktor   Decimal          @db.Decimal(10, 6)
+  mieterAnteil     Decimal          @db.Decimal(10, 2)
+  grundlageZaehler Decimal?         @db.Decimal(10, 3)
+  grundlageNenner  Decimal?         @db.Decimal(10, 3)
+  grundlageEinheit String?
+  lohnanteilAnteil Decimal?         @db.Decimal(10, 2)
+
+  abrechnungID     Int
+  abrechnung       NebenkostenAbrechnung @relation(fields: [abrechnungID], references: [id], onDelete: Cascade)
+
+  @@map("nebenkosten_positionen")
+}
+
+// ─── Mahnwesen ────────────────────────────────────────────────────────────────
+
+model Mahnung {
+  id                 Int       @id @default(autoincrement())
+  stufe              MahnStufe
+  datum              DateTime  @default(now())
+  zahlungsfrist      DateTime
+  gebuehr            Decimal   @db.Decimal(10, 2)
+  gebuehrBeglichenAm DateTime?
+  gesamtbetrag       Decimal   @db.Decimal(10, 2)
+  pdfPfad            String?
+  versandtAm         DateTime?
+  versandFehlerlog   String?
+  versandVersuche    Int       @default(0)
+  notizen            String?
+  erstelltAm         DateTime  @default(now())
+  aktualisiertAm     DateTime  @updatedAt
+
+  kontaktID Int
+  kontakt   Kontakt @relation(fields: [kontaktID], references: [id])
+
+  positionen        MahnungPosition[]
+  folgePositionen   MahnungPosition[] @relation("GebuehrAusMahnung")
+
+  @@map("mahnungen")
+}
+
+enum MahnStufe {
+  ZAHLUNGSERINNERUNG
+  MAHNUNG_1
+  MAHNUNG_2
+}
+
+model MahnungPosition {
+  id                 Int           @id @default(autoincrement())
+  typ                ForderungsTyp
+  beschreibung       String
+  offenerBetrag      Decimal       @db.Decimal(10, 2)
+
+  mahnungID Int
+  mahnung   Mahnung @relation(fields: [mahnungID], references: [id], onDelete: Cascade)
+
+  mietzahlungID Int?
+  mietzahlung   Mietzahlung? @relation(fields: [mietzahlungID], references: [id], onDelete: Restrict)
+
+  abrechnungID Int?
+  abrechnung   NebenkostenAbrechnung? @relation(fields: [abrechnungID], references: [id], onDelete: Restrict)
+
+  vorherigeMahnungID Int?
+  vorherigeMahnung   Mahnung? @relation("GebuehrAusMahnung", fields: [vorherigeMahnungID], references: [id], onDelete: Restrict)
+
+  @@map("mahnung_positionen")
+}
+
+enum ForderungsTyp {
+  MIETE
+  NEBENKOSTEN
+  MAHNGEBUEHR
+}
+
+// ─── Fristenüberwachung ──────────────────────────────────────────────────────
+
+model Frist {
+  id             Int         @id @default(autoincrement())
+  typ            FristTyp
+  titel          String
+  faelligAm      DateTime
+  notizen        String?
+  status         FristStatus @default(OFFEN)
+  erledigtAm     DateTime?
+  referenzJahr   Int?
+  erstelltAm     DateTime    @default(now())
+  aktualisiertAm DateTime    @updatedAt
+
+  mietvertragID Int?
+  mietvertrag   Mietvertrag? @relation(fields: [mietvertragID], references: [id], onDelete: Cascade)
+
+  mietobjektID Int?
+  mietobjekt   Mietobjekt? @relation(fields: [mietobjektID], references: [id], onDelete: Cascade)
+
+  kontaktID Int?
+  kontakt   Kontakt? @relation(fields: [kontaktID], references: [id], onDelete: SetNull)
+
+  @@unique([typ, mietvertragID, referenzJahr])
+  @@map("fristen")
+}
+
+enum FristTyp {
+  MANUELL
+  NKA_ABRECHNUNG
+  VERTRAGSENDE
+}
+
+enum FristStatus {
+  OFFEN
+  ERLEDIGT
+  VERWORFEN
+}
+
+// ─── Dokumentenablage ────────────────────────────────────────────────────────
+
+model Dokument {
+  id             Int               @id @default(autoincrement())
+  dateiname      String
+  speicherName   String            @unique
+  mimeTyp        String
+  groesseBytes   Int
+  sha256         String
+  titel          String
+  beschreibung   String?
+  kategorie      DokumentKategorie
+  schlagworte    String[]          @default([])
+  hochgeladenAm  DateTime          @default(now())
+  aktualisiertAm DateTime          @updatedAt
+
+  // Teilprojekt 4b: Texterkennung. textInhalt verlaesst den Server nie.
+  textInhalt         String?
+  textStatus         TextStatus              @default(WARTEND)
+  textQuelle         TextQuelle?
+  textVersuche       Int                     @default(0)
+  textHinweis        String?
+  textAktualisiertAm DateTime?
+  // Prisma kennt tsvector nicht; ohne diese Deklaration wollte die naechste
+  // Migration die Spalte wieder entfernen. Gefuellt wird sie vom Trigger.
+  suchIndex          Unsupported("tsvector")?
+
+  hochgeladenVonID Int?
+  hochgeladenVon   Benutzer? @relation(fields: [hochgeladenVonID], references: [id], onDelete: SetNull)
+
+  mietvertragID Int?
+  mietvertrag   Mietvertrag? @relation(fields: [mietvertragID], references: [id], onDelete: Cascade)
+
+  mietobjektID Int?
+  mietobjekt   Mietobjekt? @relation(fields: [mietobjektID], references: [id], onDelete: Cascade)
+
+  mieteinheitID Int?
+  mieteinheit   Mieteinheit? @relation(fields: [mieteinheitID], references: [id], onDelete: Cascade)
+
+  kontaktID Int?
+  kontakt   Kontakt? @relation(fields: [kontaktID], references: [id], onDelete: SetNull)
+
+  kostenID Int?
+  kosten   Kosten? @relation(fields: [kostenID], references: [id], onDelete: SetNull)
+
+  abrechnungID Int?
+  abrechnung   NebenkostenAbrechnung? @relation(fields: [abrechnungID], references: [id], onDelete: SetNull)
+
+  @@index([hochgeladenVonID])
+  @@index([mietvertragID])
+  @@index([mietobjektID])
+  @@index([mieteinheitID])
+  @@index([kontaktID])
+  @@index([kostenID])
+  @@index([abrechnungID])
+  @@index([kategorie])
+  @@index([sha256])
+  @@index([textStatus])
+  @@map("dokumente")
+}
+
+enum DokumentKategorie {
+  MIETVERTRAG
+  NACHTRAG
+  KUENDIGUNG
+  UEBERGABEPROTOKOLL
+  RECHNUNG
+  ABRECHNUNG
+  GRUNDRISS
+  ENERGIEAUSWEIS
+  VERSICHERUNG
+  FOTO
+  AUSWEIS
+  SCHUFA
+  SELBSTAUSKUNFT
+  SCHRIFTWECHSEL
+  SONSTIGES
+}
+
+enum TextStatus {
+  WARTEND
+  IN_ARBEIT
+  FERTIG
+  FEHLGESCHLAGEN
+  UEBERSPRUNGEN
+}
+
+enum TextQuelle {
+  TEXTEBENE
+  OCR
+}
