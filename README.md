@@ -64,8 +64,8 @@ schwerer als Schlagworte, diese schwerer als der erkannte Inhalt.
 Siehe **[INSTALL.md](INSTALL.md)**. In Kürze:
 
 ```bash
-git clone https://github.com/nikc112/Mietverwaltung.git
-cd Mietverwaltung
+git clone https://github.com/nikc112/Vermietverwaltung.git
+cd Vermietverwaltung
 sudo mkdir -p /data/mietverwaltung/dokumente
 sudo chown -R 1000:1000 /data/mietverwaltung/dokumente
 cp .env.example .env    # Werte ausfüllen, insbesondere die vier Pflichtangaben

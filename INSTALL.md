@@ -19,8 +19,8 @@ Rechnen Sie mit etwa 15 Minuten, davon der größte Teil Bauzeit.
 ## Schritt 1: Quellcode holen
 
 ```bash
-git clone https://github.com/nikc112/Mietverwaltung.git
-cd Mietverwaltung
+git clone https://github.com/nikc112/Vermietverwaltung.git
+cd Vermietverwaltung
 ```
 
 ## Schritt 2: Verzeichnis für die Dokumente anlegen
