@@ -61,16 +61,23 @@ schwerer als Schlagworte, diese schwerer als der erkannte Inhalt.
 
 ## Installation
 
-Siehe **[INSTALL.md](INSTALL.md)**. In Kürze:
+Es werden **fertige Images** verwendet — kein Klonen, kein Bauen. Sie brauchen
+zwei Dateien und eine ausgefüllte Konfiguration:
 
 ```bash
-git clone https://github.com/nikc112/Vermietverwaltung.git
-cd Vermietverwaltung
+mkdir -p ~/mietverwaltung && cd ~/mietverwaltung
+curl -O https://raw.githubusercontent.com/nikc112/Vermietverwaltung/master/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/nikc112/Vermietverwaltung/master/.env.example
+
 sudo mkdir -p /data/mietverwaltung/dokumente
 sudo chown -R 1000:1000 /data/mietverwaltung/dokumente
-cp .env.example .env    # Werte ausfüllen, insbesondere die vier Pflichtangaben
-docker compose up -d --build
+
+# .env öffnen und die vier Pflichtangaben setzen
+docker compose up -d
 ```
+
+Die vollständige Anleitung samt Sicherung und Fehlersuche steht in
+**[INSTALL.md](INSTALL.md)**.
 
 Ein Reverse Proxy mit TLS gehört davor. Welche Einstellungen er braucht, steht in
 INSTALL.md und in `nginx/reverse-proxy-beispiel.conf`.
@@ -78,7 +85,11 @@ INSTALL.md und in `nginx/reverse-proxy-beispiel.conf`.
 ## Entwicklung
 
 ```bash
-docker compose -f docker-compose.dev.yml up
+git clone https://github.com/nikc112/Vermietverwaltung.git
+cd Vermietverwaltung
+cp .env.example .env
+docker compose -f docker-compose.dev.yml up      # Entwicklung, automatisches Neuladen
+docker compose -f docker-compose.build.yml up -d --build   # eigener Bau statt fertiger Images
 ```
 
 Die Prüfungen laufen getrennt für beide Teile:

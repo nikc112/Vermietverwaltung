@@ -1,10 +1,14 @@
-# Standalone-Deployment mit fertigen Images aus ghcr.io — kein Quellcode/Build noetig.
-# Verwendung: diese Datei + .env auf den Server legen, dann:
-#   docker login ghcr.io -u <github-user> -p <PAT mit read:packages>
+# Betrieb mit fertigen Images -- kein Quellcode, kein Bauen noetig.
+#
+# Diese Datei und eine .env daneben genuegen:
+#
 #   docker compose up -d
-# Image-Version ueber IMAGE_TAG in der .env waehlen:
-#   latest                          = master-Stand
-#   feature-adressverwaltung-dsgvo  = Kontakte/DSGVO-Branch (Testserver)
+#
+# Die Images entstehen bei jedem Push in dieses Repository und liegen oeffentlich
+# in der GitHub Container Registry. IMAGE_TAG waehlt die Version; latest
+# entspricht dem Stand des Hauptzweigs.
+#
+# Vollstaendige Anleitung: INSTALL.md
 
 services:
   db:
@@ -34,7 +38,7 @@ services:
       - mietnet
 
   backend:
-    image: ghcr.io/nikc112/mietverwaltung-backend:${IMAGE_TAG:-latest}
+    image: ghcr.io/nikc112/vermietverwaltung-backend:${IMAGE_TAG:-latest}
     container_name: mietverwaltung_backend
     restart: unless-stopped
     depends_on:
@@ -86,7 +90,7 @@ services:
       - mietnet
 
   frontend:
-    image: ghcr.io/nikc112/mietverwaltung-frontend:${IMAGE_TAG:-latest}
+    image: ghcr.io/nikc112/vermietverwaltung-frontend:${IMAGE_TAG:-latest}
     container_name: mietverwaltung_frontend
     restart: unless-stopped
     depends_on:

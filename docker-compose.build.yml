@@ -1,15 +1,11 @@
-# Betrieb mit fertigen Images -- kein Quellcode, kein Bauen noetig.
+# Baut die Images aus dem Quellcode dieses Repositories.
 #
-# Diese Datei und eine .env daneben genuegen:
+# Fuer den reinen BETRIEB wird diese Datei nicht gebraucht -- dafuer genuegt
+# docker-compose.yml, die fertige Images zieht. Diese Fassung richtet sich an
+# alle, die am Quellcode arbeiten oder eine eigene Abwandlung betreiben wollen:
 #
-#   docker compose up -d
+#   docker compose -f docker-compose.build.yml up -d --build
 #
-# Die Images entstehen bei jedem Push in dieses Repository und liegen oeffentlich
-# in der GitHub Container Registry. IMAGE_TAG waehlt die Version; latest
-# entspricht dem Stand des Hauptzweigs.
-#
-# Vollstaendige Anleitung: INSTALL.md
-
 services:
   db:
     image: postgres:16-alpine
@@ -38,7 +34,10 @@ services:
       - mietnet
 
   backend:
-    image: ghcr.io/nikc112/vermietverwaltung-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
     container_name: mietverwaltung_backend
     restart: unless-stopped
     depends_on:
@@ -62,6 +61,9 @@ services:
       # X-Forwarded-For verworfen und alle Nutzer gelten als ein Absender.
       TRUST_PROXY: ${TRUST_PROXY:-127.0.0.1, ::1, 172.16.0.0/12}
       NODE_ENV: production
+      # Bewusst OHNE Vorgabewerte: der Container bricht ab, wenn sie fehlen.
+      # Ein Vorgabepasswort in einem oeffentlichen Repository waere fuer jede
+      # Installation dasselbe -- und damit fuer jeden bekannt, der es vergisst.
       ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL muss in der .env gesetzt sein}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD muss in der .env gesetzt sein}
     volumes:
@@ -90,7 +92,9 @@ services:
       - mietnet
 
   frontend:
-    image: ghcr.io/nikc112/vermietverwaltung-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: mietverwaltung_frontend
     restart: unless-stopped
     depends_on:

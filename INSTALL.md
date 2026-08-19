@@ -1,27 +1,33 @@
 # Installation
 
-Diese Anleitung beschreibt eine Produktivinstallation mit Docker Compose. Die
-Anwendung wird dabei aus dem Quellcode gebaut — es wird kein Zugang zu einer
-Container-Registry benötigt.
+Diese Anleitung beschreibt eine Produktivinstallation mit Docker Compose. Es
+werden **fertige Images** verwendet — der Quellcode wird nicht benötigt, und es
+wird nichts gebaut.
 
-Rechnen Sie mit etwa 15 Minuten, davon der größte Teil Bauzeit.
+Rechnen Sie mit etwa zehn Minuten.
 
 ## Voraussetzungen
 
 - Ein Linux-Server mit **Docker** und **Docker Compose v2** (`docker compose version`)
-- Etwa **3 GB** freier Plattenplatz für die Images. Das Backend-Abbild enthält die
+- Etwa **2 GB** freier Plattenplatz für die Images. Das Backend-Abbild enthält die
   Texterkennung samt deutschem Sprachmodell und ist entsprechend groß.
 - Ausreichend Platz für die hochgeladenen Dokumente, getrennt bedacht (siehe Schritt 2)
 - Ein **Reverse Proxy mit TLS** davor. Die Anwendung selbst spricht nur HTTP und
   gehört nicht ungeschützt ins Netz — sie verwaltet personenbezogene Daten von
   Mietern, darunter Ausweiskopien und Bonitätsauskünfte.
 
-## Schritt 1: Quellcode holen
+## Schritt 1: Die beiden Dateien holen
+
+Sie brauchen genau zwei: die Compose-Datei und eine Konfiguration.
 
 ```bash
-git clone https://github.com/nikc112/Vermietverwaltung.git
-cd Vermietverwaltung
+mkdir -p ~/mietverwaltung && cd ~/mietverwaltung
+curl -O https://raw.githubusercontent.com/nikc112/Vermietverwaltung/master/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/nikc112/Vermietverwaltung/master/.env.example
 ```
+
+Kein Klonen, kein Bauen. Die Images liegen öffentlich in der GitHub Container
+Registry und werden beim Start gezogen.
 
 ## Schritt 2: Verzeichnis für die Dokumente anlegen
 
@@ -44,11 +50,9 @@ und **von Ihrer Sicherung erfasst wird** — siehe unten.
 
 ## Schritt 3: Konfiguration anlegen
 
-```bash
-cp .env.example .env
-```
+Die `.env` haben Sie in Schritt 1 bereits heruntergeladen.
 
-Öffnen Sie die `.env` und ersetzen Sie jeden Wert, der mit `CHANGEME` beginnt.
+Öffnen Sie sie und ersetzen Sie jeden Wert, der mit `CHANGEME` beginnt.
 Zufällige Geheimnisse erzeugen Sie so:
 
 ```bash
@@ -79,10 +83,11 @@ Prüfen Sie außerdem:
 ## Schritt 4: Starten
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-Der erste Aufruf baut beide Images und dauert einige Minuten. Danach:
+Der erste Aufruf lädt die Images herunter und dauert je nach Anbindung einige
+Minuten. Danach:
 
 ```bash
 docker compose logs -f backend
@@ -164,8 +169,7 @@ auf.
 ## Aktualisieren
 
 ```bash
-git pull
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
 Migrationen laufen beim Start des Backend-Containers automatisch. Schlägt eine
@@ -206,6 +210,16 @@ Wurde `JWT_SECRET` nachträglich geändert, sind alle bestehenden Anmeldungen
 ungültig. Einmal abmelden und neu anmelden.
 
 ## Weiterentwicklung
+
+Wer am Quellcode arbeiten oder eine eigene Abwandlung betreiben möchte, klont
+das Repository und baut selbst:
+
+```bash
+git clone https://github.com/nikc112/Vermietverwaltung.git
+cd Vermietverwaltung
+cp .env.example .env
+docker compose -f docker-compose.build.yml up -d --build
+```
 
 Für die Entwicklungsumgebung mit automatischem Neuladen:
 
