@@ -49,11 +49,11 @@ pflichtige Unterlagen nach § 147 AO erhält und lediglich von der Person löst.
 
 | Bereich | Verwendet |
 |---|---|
-| Backend | Fastify 4, TypeScript, Prisma, PostgreSQL 16 |
-| Frontend | React 18, Vite, Tailwind CSS, shadcn/ui, React Query |
+| Backend | Fastify 5, TypeScript, Prisma, PostgreSQL 16 |
+| Frontend | React 18, Vite, Tailwind CSS, shadcn/ui, React Query, React Router 7 |
 | Texterkennung | Tesseract und Poppler, als Prozesse im Container |
 | Suche | PostgreSQL-Volltextsuche mit deutschem Wörterbuch |
-| Betrieb | Docker Compose |
+| Betrieb | Docker Compose, beide Container ohne Wurzelrechte |
 
 Die Volltextsuche kommt ohne zusätzliche Suchmaschine aus. Sie nutzt eine
 gewichtete `tsvector`-Spalte, die ein Datenbank-Trigger pflegt: Titel wiegen
@@ -103,6 +103,19 @@ Datenbankmigrationen werden von Hand als SQL geschrieben und liegen unter
 `backend/prisma/migrations/`. Die CI spielt sie bei jedem Push in eine echte
 PostgreSQL-16-Instanz ein und prüft anschließend das Verhalten des Suchindex
 (`backend/prisma/tests/`) — erst danach entstehen Images.
+
+## Sicherheit
+
+Beide Container laufen als unprivilegierter Benutzer mit schreibgeschütztem
+Wurzeldateisystem und ohne Linux-Capabilities. Die Anmeldung ist auf HS256
+festgelegt, die Rolle wird bei jeder Anfrage aus der Datenbank geholt statt aus
+dem Token übernommen, und fünf Fehlversuche sperren ein Konto für 15 Minuten.
+`npm audit --omit=dev` meldet in beiden Teilen null Funde; die CI bricht ab,
+sobald sich das ändert, und prüft die Härtung am laufenden Container.
+
+Welche Annahmen die Anwendung über ihre Umgebung trifft — insbesondere über den
+vorgelagerten TLS-Proxy — und welche Risiken bewusst bestehen bleiben, steht in
+**[SECURITY.md](SECURITY.md)**.
 
 ## Stand
 

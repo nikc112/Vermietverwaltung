@@ -1,35 +1,56 @@
-# Baut die Images aus dem Quellcode dieses Repositories.
-#
-# Fuer den reinen BETRIEB wird diese Datei nicht gebraucht -- dafuer genuegt
-# docker-compose.yml, die fertige Images zieht. Diese Fassung richtet sich an
-# alle, die am Quellcode arbeiten oder eine eigene Abwandlung betreiben wollen:
+# Baut beide Abbilder aus dem Quellcode dieses Repositories. Fuer den
+# gewoehnlichen Betrieb wird das nicht gebraucht -- docker-compose.yml zieht
+# fertige Abbilder. Diese Datei richtet sich an alle, die am Code arbeiten:
 #
 #   docker compose -f docker-compose.build.yml up -d --build
-#
+
+x-haertung: &haertung
+  # Verhindert, dass ein Prozess im Container ueber setuid-Programme mehr Rechte
+  # erlangt, als der Container beim Start hatte. Ohne das nuetzt ein
+  # unprivilegierter Benutzer wenig -- ein setuid-Binary hebelt ihn aus.
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 services:
   db:
     image: postgres:16-alpine
     container_name: mietverwaltung_db
     restart: unless-stopped
+    <<: *haertung
+    # Der Postgres-Einstieg legt beim ersten Start das Datenverzeichnis an und
+    # wechselt dann selbst auf den Benutzer postgres. Genau dafuer -- und nur
+    # dafuer -- bleiben diese fuenf Faehigkeiten uebrig; alles andere entfaellt.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-mietverwaltung}
       POSTGRES_USER: ${POSTGRES_USER:-mietuser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD muss in der .env gesetzt sein}
     volumes:
       - db_data:/var/lib/postgresql/data
+    # Bewusst kein "ports": die Datenbank ist ausschliesslich im internen Netz
+    # erreichbar. Wer sie fuer eine Sicherung von aussen braucht, nimmt
+    # "docker compose exec db pg_dump" -- das oeffnet keinen Port.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mietuser} -d ${POSTGRES_DB:-mietverwaltung}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    # Ohne Begrenzung wachsen die Protokolldateien unbegrenzt und fuellen
-    # irgendwann die Platte -- auf einem Server, der laenger laeuft, eine Frage
-    # der Zeit und nicht des Ob.
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-1g}
     networks:
       - mietnet
 
@@ -38,14 +59,27 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
+    image: mietverwaltung-backend:lokal
     container_name: mietverwaltung_backend
     restart: unless-stopped
+    <<: *haertung
+    # Das Abbild laeuft als Benutzer "node"; Ports unter 1024 werden nicht
+    # gebunden. Damit wird keine einzige Faehigkeit mehr gebraucht.
+    cap_drop:
+      - ALL
+    # Das Wurzeldateisystem ist schreibgeschuetzt. Geschrieben wird nur in die
+    # ausdruecklich eingehaengten Orte darunter.
+    read_only: true
+    tmpfs:
+      # Kurzlebige Kleinigkeiten von Node und den Prisma-Engines. Klein
+      # gehalten, weil tmpfs Arbeitsspeicher belegt.
+      - /tmp:size=64m,mode=1777
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mietuser}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mietverwaltung}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET muss in der .env gesetzt sein}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -56,10 +90,16 @@ services:
       APP_URL: ${APP_URL:-http://localhost}
       PDF_STORAGE_PATH: /app/storage/pdfs
       DOKUMENT_STORAGE_PATH: /app/storage/dokumente
+      # Die Texterkennung legt Seitenrenderings von mehreren Megabyte je Seite
+      # ab. Deshalb ein eigenes Volume statt des tmpfs: dort waeren es
+      # Arbeitsspeicher, und ein langes Fax fuellte ihn.
+      TMPDIR: /app/tmp
       # Adressen der vorgelagerten Proxys. Steht ein Reverse Proxy auf einer
-      # anderen Maschine davor, dessen Adresse hier ergaenzen — sonst wird sein
+      # anderen Maschine davor, dessen Adresse hier ergaenzen -- sonst wird sein
       # X-Forwarded-For verworfen und alle Nutzer gelten als ein Absender.
-      TRUST_PROXY: ${TRUST_PROXY:-127.0.0.1, ::1, 172.16.0.0/12}
+      # Achtung: Compose kann Variablen nicht verschachteln. Wird DOCKER_SUBNET
+      # geaendert, muss TRUST_PROXY in der .env von Hand mitgezogen werden.
+      TRUST_PROXY: ${TRUST_PROXY:-127.0.0.1, ::1, 172.28.0.0/16}
       NODE_ENV: production
       # Bewusst OHNE Vorgabewerte: der Container bricht ab, wenn sie fehlen.
       # Ein Vorgabepasswort in einem oeffentlichen Repository waere fuer jede
@@ -68,7 +108,10 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD muss in der .env gesetzt sein}
     volumes:
       - pdf_storage:/app/storage/pdfs
+      - ocr_tmp:/app/tmp
       - ${DOKUMENT_PFAD:-/data/mietverwaltung/dokumente}:/app/storage/dokumente
+    # Bewusst "expose" und nicht "ports": das Backend ist nur ueber das
+    # Frontend erreichbar und bekommt keinen Port auf dem Host.
     expose:
       - "3000"
     # Ohne diesen Test gilt ein Backend, das zwar laeuft aber nicht mehr
@@ -80,14 +123,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
-    # Ohne Begrenzung wachsen die Protokolldateien unbegrenzt und fuellen
-    # irgendwann die Platte -- auf einem Server, der laenger laeuft, eine Frage
-    # der Zeit und nicht des Ob.
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          # Grosszuegig: Tesseract braucht je Seite ordentlich Speicher, und ein
+          # OOM-Kill mitten in der Texterkennung laesst das Dokument haengen.
+          memory: ${BACKEND_MEMORY_LIMIT:-3g}
     networks:
       - mietnet
 
@@ -95,27 +136,48 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: production
+    image: mietverwaltung-frontend:lokal
     container_name: mietverwaltung_frontend
     restart: unless-stopped
+    <<: *haertung
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=32m,mode=0755
     depends_on:
       - backend
+    # Innen 8080, weil der Container als Benutzer 101 laeuft und keine Ports
+    # unter 1024 binden darf. Aussen bleibt es bei APP_PORT.
     ports:
-      - "${APP_PORT:-80}:80"
-    # Ohne Begrenzung wachsen die Protokolldateien unbegrenzt und fuellen
-    # irgendwann die Platte -- auf einem Server, der laenger laeuft, eine Frage
-    # der Zeit und nicht des Ob.
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
+      - "${APP_PORT:-80}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-256m}
     networks:
       - mietnet
 
 volumes:
   db_data:
   pdf_storage:
+  ocr_tmp:
 
 networks:
   mietnet:
     driver: bridge
+    # Ausdruecklich festgelegt, damit TRUST_PROXY genau dieses Netz nennen kann
+    # statt pauschal 172.16.0.0/12 -- das waeren eine Million Adressen, denen
+    # ein X-Forwarded-For geglaubt wuerde. Kollidiert der Bereich auf dem
+    # Server, DOCKER_SUBNET in der .env auf einen freien Bereich setzen.
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.28.0.0/16}

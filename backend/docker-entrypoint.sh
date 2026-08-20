@@ -2,7 +2,12 @@
 set -e
 
 echo "Running database migrations..."
-npx prisma migrate deploy
+# Bewusst der lokale Pfad statt "npx prisma": npx legt bei Bedarf einen
+# Zwischenspeicher im Heimatverzeichnis an, und das liegt seit der
+# Umstellung auf einen schreibgeschuetzten Container im nicht
+# beschreibbaren Teil. Das Programm liegt ohnehin im Abbild -- prisma ist
+# eine regulaere Abhaengigkeit, keine Entwicklungsabhaengigkeit mehr.
+./node_modules/.bin/prisma migrate deploy
 
 echo "Seeding initial admin user..."
 if [ -z "$ADMIN_PASSWORD" ] || [ -z "$ADMIN_EMAIL" ]; then

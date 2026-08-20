@@ -42,8 +42,9 @@ sudo mkdir -p /data/mietverwaltung/dokumente
 sudo chown -R 1000:1000 /data/mietverwaltung/dokumente
 ```
 
-Die Kennung 1000 ist der Benutzer `node` im Container. Soll ein anderer Pfad
-verwendet werden, tragen Sie ihn in Schritt 3 unter `DOKUMENT_PFAD` ein.
+Die Kennung 1000 ist der Benutzer `node` im Container -- die Anwendung läuft
+nicht als root. Soll ein anderer Pfad verwendet werden, tragen Sie ihn in
+Schritt 3 unter `DOKUMENT_PFAD` ein.
 
 Wählen Sie den Pfad so, dass er auf einem Datenträger mit genügend Platz liegt
 und **von Ihrer Sicherung erfasst wird** — siehe unten.
@@ -137,12 +138,21 @@ Läuft der Proxy auf **derselben** Maschine, genügt der Vorgabewert. Läuft er 
 einer **anderen**, tragen Sie dessen Adresse ein:
 
 ```
-TRUST_PROXY=127.0.0.1, ::1, 172.16.0.0/12, 10.0.0.5
+TRUST_PROXY=127.0.0.1, ::1, 172.28.0.0/16, 10.0.0.5
 ```
 
 Ohne diesen Eintrag verwirft die Anwendung den Kopf des Proxys und hält alle
 Nutzer für einen einzigen Absender — die Ratenbegrenzung träfe dann alle
 gemeinsam. Tragen Sie hier nur ein, was Sie tatsächlich kontrollieren.
+
+**Warum der zweite Punkt wichtiger ist, als er aussieht.** Sobald die Anwendung
+einem Proxy glaubt, kann sie nicht mehr unterscheiden, ob `X-Forwarded-For` von
+diesem Proxy stammt oder vom Client mitgeschickt wurde. Überschreibt Ihr äußerer
+Proxy den Kopf nicht, kann ein Angreifer bei jedem Versuch eine andere Adresse
+behaupten und die adressgebundene Ratenbegrenzung damit umgehen. Die Bremse
+gegen Passwortraten hängt deshalb zusätzlich am Konto und nicht an der Adresse —
+fünf Fehlversuche sperren es 15 Minuten lang, gleich woher sie kommen. Die
+Einzelheiten stehen in [SECURITY.md](SECURITY.md).
 
 ## Sicherung
 
@@ -178,6 +188,40 @@ fehl, bricht der Container ab und die Datenbank bleibt unverändert.
 **Vor größeren Sprüngen** sollten Sie die Datenbank sichern. Ein Rückschritt auf
 eine ältere Version ist nach einer Migration nicht ohne Weiteres möglich.
 
+Eine feste Version statt `latest` wählen Sie über `IMAGE_TAG` in der `.env`:
+
+```
+IMAGE_TAG=v1.1.0
+```
+
+### Umstieg auf 1.1.0 — zwei einmalige Handgriffe
+
+Ab dieser Version laufen beide Container **ohne Wurzelrechte**. Eine bestehende
+Installation muss dafür zwei Dinge nachziehen.
+
+**Erstens: das Volume für die erzeugten PDF-Abrechnungen übereignen.** Es wurde
+angelegt, als der Container noch als root lief, und gehört deshalb root. Der
+Dienst könnte dort sonst nicht mehr schreiben:
+
+```bash
+docker compose down
+docker run --rm -v mietverwaltung_pdf_storage:/v alpine chown -R 1000:1000 /v
+```
+
+Heißt Ihr Verzeichnis anders, heißt auch das Volume anders --
+`docker volume ls | grep pdf_storage` nennt den richtigen Namen.
+
+**Zweitens: die neue `docker-compose.yml` holen.** Der Frontend-Container hört
+jetzt innen auf Port 8080 statt 80, weil nur Ports unter 1024 Wurzelrechte
+verlangen. Wer die alte Datei behält und nur neue Images zieht, landet ins Leere.
+Nach außen ändert sich nichts.
+
+```bash
+curl -O https://raw.githubusercontent.com/nikc112/Vermietverwaltung/master/docker-compose.yml
+docker compose up -d
+docker compose exec backend id -u    # muss 1000 melden, nicht 0
+```
+
 ## Wenn etwas nicht funktioniert
 
 **Der Backend-Container startet nicht.**
@@ -208,6 +252,22 @@ docker compose exec backend sh -c 'which pdftotext tesseract unzip'
 **Anmeldung nicht möglich, obwohl das Passwort stimmt.**
 Wurde `JWT_SECRET` nachträglich geändert, sind alle bestehenden Anmeldungen
 ungültig. Einmal abmelden und neu anmelden.
+
+**Die Anmeldung meldet „Zu viele fehlgeschlagene Anmeldungen".**
+Nach fünf Fehlversuchen ist das Konto 15 Minuten gesperrt. Die Sperre gilt je
+Konto und läuft von selbst ab; ein Neustart des Backend-Containers hebt sie
+ebenfalls auf.
+
+**Der Container startet mit einer Meldung zu `JWT_SECRET`.**
+Geprüft wird nicht nur die Länge, sondern auch, ob genügend verschiedene Zeichen
+vorkommen und ob noch ein Platzhalter aus der Vorlage darin steht. Erzeugen Sie
+den Wert mit `openssl rand -base64 36`.
+
+**Uploads oder die Texterkennung scheitern mit „read-only file system".**
+Beide Container laufen mit schreibgeschütztem Wurzeldateisystem. Beschreibbar
+sind nur `/app/storage/dokumente`, `/app/storage/pdfs`, `/app/tmp` und `/tmp`.
+Prüfen Sie, ob Sie die aktuelle `docker-compose.yml` verwenden — insbesondere
+das Volume `ocr_tmp` auf `/app/tmp`.
 
 ## Weiterentwicklung
 

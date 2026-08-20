@@ -9,3 +9,6 @@ coverage/
 prisma/generated/
 .claude/
 docker-compose.override.yml
+
+# Ablage der Testlaeufe
+backend/.test-storage/

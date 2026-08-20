@@ -5,15 +5,30 @@ on:
     branches:
       - master
       - 'feature/**'
+    tags:
+      - 'v*'
   workflow_dispatch:
 
+# Least Privilege: standardmaessig darf kein Job irgendetwas schreiben.
+# Nur build-push bekommt weiter unten ausdruecklich packages: write.
+permissions:
+  contents: read
+
+# Alle Actions sind auf den Commit-SHA festgenagelt statt auf ein Tag. Ein Tag
+# kann vom Betreiber der Action jederzeit auf einen anderen Stand gezogen
+# werden -- damit liefe in dieser Pipeline auf einmal fremder Code mit Zugriff
+# auf die Registry-Anmeldung. Der SHA laesst sich nicht verschieben.
+# Der Klartext dahinter steht als Kommentar, damit erkennbar bleibt, welche
+# Version gemeint ist.
+
 jobs:
-  # Lint, Unit-Tests und Build fuer das Backend, danach werden alle Migrationen
-  # in eine echte PostgreSQL-16-Instanz eingespielt und das Verhalten des
-  # Suchindex geprueft. Ein Fehler in einer Migration faellt sonst erst beim
-  # Deploy auf und blockiert diesen komplett, weil der Backend-Container die
-  # Migrationen beim Start anwendet.
-  pruefen:
+  # Vor diesem Job baute die CI Images, ohne je einen Test auszufuehren. Vor allem
+  # aber lief keine Migration je gegen eine echte Datenbank, bevor sie auf dem
+  # Server angewendet wurde -- ein Fehler darin faellt sonst erst beim Deploy auf
+  # und blockiert diesen komplett, weil der Backend-Container die Migrationen
+  # beim Start einspielt.
+  backend:
+    name: Backend pruefen
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -32,10 +47,10 @@ jobs:
       DATABASE_URL: postgresql://postgres:pruefung@localhost:5432/mietverwaltung_pruefung
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Node einrichten
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: npm
@@ -45,6 +60,14 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      # Abnahmekriterium der Sicherheitspruefung: keine Critical- oder
+      # High-Funde in den produktiven Abhaengigkeiten. Bricht der Schritt,
+      # entsteht kein Abbild -- bewusst, damit eine bekannte Luecke nicht
+      # unbemerkt in eine Veroeffentlichung rutscht.
+      - name: Abhaengigkeiten auf bekannte Luecken pruefen
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Prisma-Client erzeugen
         working-directory: backend
         run: npx prisma generate
@@ -53,7 +76,7 @@ jobs:
         working-directory: backend
         run: npm run lint
 
-      - name: Unit-Tests
+      - name: Tests
         working-directory: backend
         run: npm test
 
@@ -78,9 +101,184 @@ jobs:
       - name: Verhalten des Suchindex-Triggers pruefen
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/prisma/tests/suchindex.test.sql
 
-  build-push:
-    needs: pruefen
+  frontend:
+    name: Frontend pruefen
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Node einrichten
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Abhaengigkeiten installieren
+        working-directory: frontend
+        run: npm ci
+
+      - name: Abhaengigkeiten auf bekannte Luecken pruefen
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # Startet den echten Stapel aus den echten Abbildern. Dieser Job ist der
+  # Ersatz fuer eine lokale Docker-Umgebung: die Haertung (Nicht-root,
+  # schreibgeschuetztes Wurzeldateisystem, nginx auf 8080) laesst sich nur am
+  # laufenden Container belegen, nicht am Dockerfile.
+  rauchtest:
+    name: Gehaertete Container starten und pruefen
+    runs-on: ubuntu-latest
+    # In diesem Repository zieht docker-compose.yml fertige Abbilder aus der
+    # Registry. Der Rauchtest soll aber genau die Abbilder pruefen, die dieser
+    # Lauf gerade baut -- also die Build-Variante.
+    env:
+      COMPOSE_FILE: docker-compose.build.yml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Konfiguration und Ablage anlegen
+        run: |
+          set -euo pipefail
+          mkdir -p ci-dokumente
+          # 1000 ist der Benutzer "node" im Backend-Abbild.
+          sudo chown -R 1000:1000 ci-dokumente
+          {
+            echo 'POSTGRES_PASSWORD=rauchtest-nur-fuer-die-ci'
+            echo 'JWT_SECRET=kY7pQz2mVx9RbT4wLn6HsA3jDf8gUeCiOtZ5'
+            echo 'ADMIN_EMAIL=rauchtest@example.org'
+            echo 'ADMIN_PASSWORD=rauchtest-passwort-1234'
+            echo 'APP_PORT=8080'
+            echo 'DOKUMENT_PFAD=./ci-dokumente'
+          } > .env
+
+      - name: Stapel bauen und starten
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Protokolle zeigen, falls etwas nicht hochkam
+        if: failure()
+        run: docker compose logs
+
+      - name: Backend laeuft nicht als root
+        run: |
+          set -euo pipefail
+          kennung=$(docker compose exec -T backend id -u)
+          echo "Backend laeuft als Kennung $kennung"
+          test "$kennung" != "0"
+
+      - name: Frontend laeuft nicht als root
+        run: |
+          set -euo pipefail
+          kennung=$(docker compose exec -T frontend id -u)
+          echo "Frontend laeuft als Kennung $kennung"
+          test "$kennung" != "0"
+
+      - name: Wurzeldateisystem ist schreibgeschuetzt
+        run: |
+          set -euo pipefail
+          for dienst in backend frontend; do
+            if docker compose exec -T "$dienst" sh -c 'touch /probe-schreibtest' 2>/dev/null; then
+              echo "FEHLER: $dienst konnte nach / schreiben"
+              exit 1
+            fi
+            echo "$dienst: / ist schreibgeschuetzt"
+          done
+
+      - name: Die Ablageorte sind trotzdem beschreibbar
+        run: |
+          set -euo pipefail
+          docker compose exec -T backend sh -c 'touch /app/storage/dokumente/.probe && rm /app/storage/dokumente/.probe'
+          docker compose exec -T backend sh -c 'touch /app/storage/pdfs/.probe && rm /app/storage/pdfs/.probe'
+          docker compose exec -T backend sh -c 'touch /app/tmp/.probe && rm /app/tmp/.probe'
+          docker compose exec -T backend sh -c 'touch /tmp/.probe && rm /tmp/.probe'
+
+      - name: nginx-Konfiguration ist syntaktisch in Ordnung
+        run: docker compose exec -T frontend nginx -t
+
+      - name: Die Anwendung antwortet
+        run: curl -fsS http://localhost:8080/ -o /dev/null
+
+      - name: Sicherheitsheader sind gesetzt
+        run: |
+          set -euo pipefail
+          curl -fsSI http://localhost:8080/ | tr 'A-Z' 'a-z' > kopf.txt
+          cat kopf.txt
+          for erwartet in 'content-security-policy' 'x-content-type-options: nosniff' 'x-frame-options: deny' 'referrer-policy' 'permissions-policy'; do
+            grep -q "$erwartet" kopf.txt || { echo "FEHLT: $erwartet"; exit 1; }
+          done
+          # script-src darf weder unsafe-inline noch unsafe-eval enthalten.
+          if grep 'content-security-policy' kopf.txt | grep -q 'unsafe-eval'; then
+            echo "FEHLER: unsafe-eval in der CSP"; exit 1
+          fi
+          # Ueber Klartext darf kein HSTS versprochen werden.
+          if grep -q 'strict-transport-security' kopf.txt; then
+            echo "FEHLER: HSTS ueber http gesetzt"; exit 1
+          fi
+          # nginx darf seine Version nicht nennen.
+          if grep -qE 'server: nginx/[0-9]' kopf.txt; then
+            echo "FEHLER: nginx nennt seine Version"; exit 1
+          fi
+          echo "Alle Header in Ordnung"
+
+      - name: Anmeldung funktioniert
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST http://localhost:8080/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"rauchtest@example.org","password":"rauchtest-passwort-1234"}' > anmeldung.json
+          grep -q '"token"' anmeldung.json || { echo "kein Token in der Antwort"; exit 1; }
+
+      - name: Geschuetzte Route ist ohne Anmeldung gesperrt
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/dokumente)
+          echo "ohne Token: HTTP $status"
+          test "$status" = "401"
+
+      - name: Die Anmeldesperre greift trotz wechselnder Absenderadresse
+        run: |
+          set -euo pipefail
+          gesperrt=0
+          for i in 1 2 3 4 5 6 7 8; do
+            status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/v1/auth/login \
+              -H 'Content-Type: application/json' \
+              -H "X-Forwarded-For: 203.0.113.$i" \
+              -d "{\"email\":\"rauchtest@example.org\",\"password\":\"falsch-$i\"}")
+            echo "Versuch $i (vorgetaeuschter Absender 203.0.113.$i): HTTP $status"
+            if [ "$status" = "429" ]; then gesperrt=1; fi
+          done
+          # Die wechselnde Adresse darf nicht helfen: die Sperre haengt am Konto.
+          test "$gesperrt" = "1" || { echo "FEHLER: Konto wurde nicht gesperrt"; exit 1; }
+
+      - name: Keine Antwort verraet interne Pfade
+        run: |
+          set -euo pipefail
+          curl -s http://localhost:8080/api/v1/dokumente/999999 > antwort.txt
+          cat antwort.txt
+          if grep -q '/app/storage' antwort.txt; then
+            echo "FEHLER: Ablagepfad in der Antwort"; exit 1
+          fi
+          echo "keine internen Pfade in der Antwort"
+
+      - name: Stapel abraeumen
+        if: always()
+        run: docker compose down -v
+
+  build-push:
+    name: Abbilder bauen und veroeffentlichen
+    needs: [backend, frontend, rauchtest]
+    runs-on: ubuntu-latest
+    # Nur dieser Job schreibt, und nur in die Registry.
     permissions:
       contents: read
       packages: write
@@ -95,36 +293,39 @@ jobs:
             target: production
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Buildx einrichten
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Bei ghcr.io anmelden
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Image-Namen muessen kleingeschrieben sein, github.repository liefert aber
-      # die Schreibweise des Repositories. Ueber das Repository statt nur ueber
-      # den Kontoinhaber, damit ein Fork in seinen eigenen Namensraum schreibt.
+      # ghcr.io verlangt Kleinschreibung, GITHUB_REPOSITORY behaelt aber die
+      # Schreibweise des Repositories. Ueber das Repository statt nur ueber den
+      # Kontoinhaber, damit ein Fork in seinen eigenen Namensraum schreibt --
+      # und damit dieses Repository nicht die Abbilder eines anderen ueberschreibt.
       - name: Image-Namen kleinschreiben
         id: repo
         run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Image-Tags ermitteln
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ steps.repo.outputs.name }}-${{ matrix.name }}
           tags: |
             type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Bauen und pushen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
           target: ${{ matrix.target }}

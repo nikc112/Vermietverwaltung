@@ -16,6 +16,11 @@ services:
   backend:
     build:
       target: development
+    # Die Haertung der Produktionsdatei wird hier bewusst gelockert: der
+    # Entwicklungsmodus schreibt in node_modules und in den Cache von tsx, was
+    # unter einem schreibgeschuetzten Wurzeldateisystem scheitert.
+    read_only: false
+    user: root
     environment:
       NODE_ENV: development
     volumes:
@@ -28,3 +33,6 @@ services:
   frontend:
     build:
       target: builder
+    read_only: false
+    user: root
+    command: npm run dev -- --host 0.0.0.0 --port 8080

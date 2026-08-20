@@ -11,13 +11,13 @@ FROM base AS development
 # meldet ENOENT als Zeichenkette, nicht als Zahl. Bewusst hier statt in base:
 # die builder-Stufe braucht sie nicht.
 RUN apk add --no-cache poppler-utils tesseract-ocr tesseract-ocr-data-deu unzip
-RUN npm install
+RUN npm ci
 COPY . .
 EXPOSE 3000
 CMD ["dumb-init", "npm", "run", "dev"]
 
 FROM base AS builder
-RUN npm install
+RUN npm ci
 COPY . .
 RUN npx prisma generate
 RUN npm run build
@@ -30,10 +30,24 @@ RUN apk add --no-cache dumb-init openssl poppler-utils tesseract-ocr tesseract-o
 ENV NODE_ENV=production
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm install --omit=dev
+# npm ci statt npm install: baut genau die in package-lock.json festgehaltenen
+# Versionen. npm install darf abweichen, womit das gebaute Abbild nicht mehr
+# dem entspricht, was geprueft wurde.
+RUN npm ci --omit=dev
 RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Ab hier laeuft nichts mehr als root. Die Speicherverzeichnisse werden hier
+# angelegt und uebereignet, damit Docker sie beim ersten Anlegen eines Volumes
+# mit dieser Eigentuemerschaft uebernimmt -- sonst gehoerte das frische Volume
+# root und der Dienst koennte nicht hineinschreiben.
+# Der Benutzer "node" ist im Node-Abbild bereits vorhanden und hat die Kennung
+# 1000, dieselbe, die INSTALL.md fuer das Dokumentenverzeichnis auf dem Host
+# vorgibt.
+RUN mkdir -p /app/storage/pdfs /app/storage/dokumente && chown -R node:node /app
+USER node
+
 EXPOSE 3000
 ENTRYPOINT ["dumb-init", "docker-entrypoint.sh"]

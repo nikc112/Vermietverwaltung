@@ -7,7 +7,7 @@ import prismaPlugin from './plugins/prisma';
 import authPlugin from './plugins/auth';
 import corsPlugin from './plugins/cors';
 import routes from './routes';
-import { AppError } from './utils/errors';
+import { bestimmeFehlerantwort } from './utils/fehlerantwort';
 import { MAX_GROESSE_BYTES } from './utils/dokument';
 import { raeumeReste, setzeHaengendeZurueck, starteWarteschlange } from './services/textextraktion.service';
 
@@ -54,23 +54,29 @@ async function main() {
       return { statusCode: 429, error: text, message: text };
     },
   });
+  // MUSS vor server.register(routes) stehen. Fastify bindet den
+  // Fehlerbehandler an den Kontext, der beim Registrieren einer Route gilt --
+  // ein spaeter gesetzter Behandler greift fuer die bereits registrierten
+  // Routen nicht mehr. Genau das war hier der Fall: der Behandler unten stand
+  // hinter den Routen und lief nie, sodass Fastifys Standardbehandlung
+  // antwortete. Die gibt bei einem 500er die Fehlermeldung mit heraus, also
+  // etwa "ENOENT ... open '/app/storage/dokumente/2026/08/xxx.pdf'" -- der
+  // vollstaendige Ablagepfad, an jeden Aufrufer.
+  // Fastify 5 typt den Fehler hier als unknown. Das ist keine Schikane: der
+  // Fehlerbehandler faengt auch, was Plugins und Fremdcode werfen, und das muss
+  // kein Error sein. Die Eingrenzung steckt in bestimmeFehlerantwort.
+  server.setErrorHandler((error: unknown, _request, reply) => {
+    const antwort = bestimmeFehlerantwort(error);
+    if (antwort.protokollieren) {
+      server.log.error(error);
+    }
+    return reply.status(antwort.status).send({ error: antwort.nachricht });
+  });
+
   await server.register(routes, { prefix: '/api/v1' });
 
   server.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
-  server.setErrorHandler((error, _request, reply) => {
-    if (error instanceof AppError) {
-      return reply.status(error.statusCode).send({ error: error.message });
-    }
-    // Die Ratenbegrenzung wirft einen eigenen Fehler mit Status 429. Ohne diesen
-    // Zweig faengt ihn der generische Fall unten ab und meldet 500 — der Nutzer
-    // saehe einen Serverfehler statt des Hinweises, wie lange er warten muss.
-    if (error.statusCode === 429) {
-      return reply.status(429).send({ error: error.message || 'Zu viele Anfragen. Bitte kurz warten.' });
-    }
-    server.log.error(error);
-    return reply.status(500).send({ error: 'Interner Serverfehler' });
-  });
 
   await server.listen({ port: 3000, host: '0.0.0.0' });
   server.log.info('Server läuft auf http://0.0.0.0:3000');

@@ -123,8 +123,17 @@ function toAnzeige(d: DokumentMitBezug, textstelle: string | null = null): Dokum
   };
 }
 
-function absoluterPfad(speicherName: string): string {
-  return path.join(config.DOKUMENT_STORAGE_PATH, speicherName);
+// Der speicherName stammt immer aus erzeugeSpeicherName und besteht damit aus
+// Jahr, Monat und einer UUID -- der hochgeladene Dateiname geht nie ein. Diese
+// Pruefung ist die zweite Verteidigungslinie: sollte je ein Wert von woanders
+// hierher gelangen, endet ein "../.." an dieser Stelle und nicht im Dateisystem.
+export function absoluterPfad(speicherName: string): string {
+  const wurzel = path.resolve(config.DOKUMENT_STORAGE_PATH);
+  const ziel = path.resolve(wurzel, speicherName);
+  if (ziel !== wurzel && !ziel.startsWith(wurzel + path.sep)) {
+    throw badRequest('Ungültiger Speicherort');
+  }
+  return ziel;
 }
 
 // Loescht eine Datei verbindlich: ENOENT (Datei bereits weg) gilt als Erfolg, jeder andere
