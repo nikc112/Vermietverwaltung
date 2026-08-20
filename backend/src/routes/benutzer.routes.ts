@@ -6,6 +6,12 @@ import { conflict, notFound } from '../utils/errors';
 
 const benutzerRoutes: FastifyPluginAsync = async (server) => {
   const adminOnly = makeAuth(server, ...ROLLEN.ADMIN_ONLY);
+  // Eigene Grenze fuer die Vergabe von Passwoertern. Die Route ist zwar
+  // Administratoren vorbehalten, aber genau deshalb lohnend: wer ein
+  // Verwaltungskonto uebernommen hat, koennte damit im Sekundentakt fremde
+  // Passwoerter neu setzen. Zwanzig in fuenf Minuten reichen fuer jede
+  // Verwaltungsarbeit von Hand.
+  const passwortGrenze = { config: { rateLimit: { max: 20, timeWindow: '5 minutes' } } };
 
   server.get('/', adminOnly, async () => {
     return server.prisma.benutzer.findMany({
@@ -51,7 +57,7 @@ const benutzerRoutes: FastifyPluginAsync = async (server) => {
     return benutzer;
   });
 
-  server.put('/:id/passwort', adminOnly, async (req, reply) => {
+  server.put('/:id/passwort', { ...adminOnly, ...passwortGrenze }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = resetPasswortSchema.safeParse(req.body);
     if (!body.success) return reply.status(400).send({ error: body.error.flatten().fieldErrors });

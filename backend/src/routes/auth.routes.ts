@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { loginSchema, changePasswordSchema } from '../schemas/auth.schema';
 import * as authService from '../services/auth.service';
 import { Anmeldesperre } from '../utils/anmeldesperre';
+import { makeAuth } from '../utils/auth';
 
 const authRoutes: FastifyPluginAsync = async (server) => {
   // Deutlich strenger als die Grundgrenze: hier wird geraten, nicht gearbeitet.
@@ -52,11 +53,13 @@ const authRoutes: FastifyPluginAsync = async (server) => {
     };
   });
 
-  server.get('/me', { preHandler: [server.authenticate] }, async (request) => {
+  const angemeldet = makeAuth(server);
+
+  server.get('/me', angemeldet, async (request) => {
     return authService.getMe(server.prisma, request.user.id);
   });
 
-  server.put('/passwort', { preHandler: [server.authenticate] }, async (request, reply) => {
+  server.put('/passwort', angemeldet, async (request, reply) => {
     const body = changePasswordSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: body.error.flatten().fieldErrors });

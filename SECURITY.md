@@ -91,6 +91,26 @@ den echten Stapel und stellt fest, unter welcher Kennung die Prozesse laufen, ob
 `/` beschreibbar ist und ob die Sicherheitsheader gesetzt sind. Ein Dockerfile
 zu lesen genuegt dafuer nicht.
 
+## Rechte: geprueft wird jede Route, nicht eine ausgewaehlte
+
+`backend/src/__tests__/routenmatrix.test.ts` liest die Routentabelle des
+laufenden Servers aus und prueft fuer **jede** registrierte Route:
+
+- ohne Anmeldung antwortet sie mit 401 (einzige Ausnahme: die Anmeldung selbst),
+- eine krumme Kennung im Pfad (`12xyz`, `0`, `-1`, `abc`) wird abgewiesen.
+
+Der Sinn liegt in der Vollstaendigkeit: eine neue Route, die den Waechter
+vergisst, faellt hier auf. Ein Test, der nur eine Routendatei prueft, haette das
+nicht bemerkt -- und tat es auch nicht: dieser Test hat aufgedeckt, dass drei
+Routendateien ihren Waechter von Hand zusammenbauten statt ihn ueber `makeAuth`
+zu beziehen und damit die Kennungspruefung umgingen.
+
+Die Kennungen werden zentral in `makeAuth` geprueft, nicht an 42 einzelnen
+Stellen -- so kann es beim Hinzufuegen einer Route niemand vergessen. Die
+Pruefung laeuft NACH Anmeldung und Rollenpruefung: andersherum verriete eine
+Meldung ueber eine ungueltige Kennung einem nicht angemeldeten Aufrufer, dass es
+die Route ueberhaupt gibt.
+
 ## Bewusst bestehende Risiken
 
 ### 1. Die adressgebundene Ratenbegrenzung ist umgehbar, sobald ein Proxy davorsteht
@@ -145,7 +165,25 @@ Hebel gegen den Arbeitsspeicher wird.
 **Wann behoben:** Sobald mehr als eine Instanz betrieben wird. Dann gehoert die
 Zaehlung in die Datenbank oder einen gemeinsamen Zwischenspeicher.
 
-### 4. Das Backend braucht beschreibbaren Zwischenspeicher
+### 4. Nebenkostenabrechnungen stehen jedem angemeldeten Benutzer offen
+
+**Was:** Die Routen unter `/api/v1/nebenkosten` und `/api/v1/dashboard`
+verlangen eine Anmeldung, aber keine bestimmte Rolle. Ein KOSTENBUCHER kann
+damit eine Abrechnung anlegen und loeschen.
+
+**Warum vertretbar:** Das ist die Bauart der Anwendung und keine Luecke: die
+Oberflaeche blendet dort nichts nach Rolle aus, die Abrechnung ist die Arbeit,
+fuer die es die Rolle KOSTENBUCHER gibt. Die Rollen trennen in dieser Anwendung
+den Zugang zu personenbezogenen Unterlagen, nicht die Buchhaltung.
+
+**Auffaellig bleibt eine Unstimmigkeit:** das PDF einer Abrechnung zu lesen
+verlangt VERTRAGSVERWALTER, die Abrechnung zu loeschen nicht. Lesen ist dort
+also strenger geschuetzt als Loeschen. Das sieht nach einem Versehen aus, ist
+aber eine Entscheidung ueber die Arbeitsteilung im Haus und keine, die sich aus
+der Sicherheit ableiten laesst -- deshalb wurde sie nicht im Vorbeigehen
+geaendert.
+
+### 5. Das Backend braucht beschreibbaren Zwischenspeicher
 
 **Was:** Trotz `read_only: true` sind `/tmp` (tmpfs, 64 MB) und `/app/tmp`
 (Volume) beschreibbar.
@@ -188,6 +226,8 @@ prueft am laufenden Container:
 | Geschuetzte Route ohne Token: 401 | belegt |
 | Anmeldesperre greift trotz wechselnder Absenderadresse | belegt |
 | Fehlerantwort enthaelt keinen Ablagepfad | belegt |
+| Trivy findet keine behebbare HIGH/CRITICAL-Luecke in den Abbildern | belegt |
+| Trivy findet keine Fehlkonfiguration und kein Geheimnis im Repository | belegt |
 
 Schlaegt einer dieser Punkte fehl, entsteht kein Abbild. Das ist kein
 theoretischer Schutz: beim ersten Lauf dieser Pruefung ist genau das passiert,
@@ -200,6 +240,7 @@ gebracht haette (siehe Migration `001a_rollen_vorbereiten`).
 gitleaks git . --redact
 semgrep scan --config auto .
 trivy fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL .
+trivy image --severity HIGH,CRITICAL --ignore-unfixed mietverwaltung-backend:lokal
 
 cd backend  && npm ci && npm audit --omit=dev && npm run lint && npm test && npm run build
 cd frontend && npm ci && npm audit --omit=dev && npm run lint && npm run build

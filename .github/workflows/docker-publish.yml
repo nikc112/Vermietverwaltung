@@ -292,6 +292,45 @@ jobs:
           fi
           echo "keine internen Pfade in der Antwort"
 
+      # Die npm-Pruefung deckt nur die JavaScript-Abhaengigkeiten ab. Was in den
+      # Grundabbildern steckt -- Alpine, OpenSSL, Poppler, Tesseract, nginx --
+      # sieht sie nicht. Genau dort sucht der Sicherheitspruefer mit Trivy, und
+      # genau dort wusste dieses Projekt bisher nichts ueber sich.
+      #
+      # ignore-unfixed: gemeldet wird, wogegen es ein Update gibt. Eine Luecke
+      # ohne verfuegbaren Fix bricht den Lauf nicht -- sonst haenge die
+      # Veroeffentlichung an der Veroeffentlichungsgeschwindigkeit fremder
+      # Distributionen. Sie steht dann trotzdem im Bericht.
+      - name: Backend-Abbild auf bekannte Luecken pruefen
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: mietverwaltung-backend:lokal
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      - name: Frontend-Abbild auf bekannte Luecken pruefen
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: mietverwaltung-frontend:lokal
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      # Ergaenzend das Repository selbst: Fehlkonfigurationen in Dockerfiles und
+      # Compose-Dateien sowie versehentlich eingecheckte Geheimnisse.
+      - name: Repository auf Fehlkonfiguration und Geheimnisse pruefen
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          format: table
+
       - name: Stapel abraeumen
         if: always()
         run: docker compose down -v

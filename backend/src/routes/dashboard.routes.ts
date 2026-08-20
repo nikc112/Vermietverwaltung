@@ -2,9 +2,12 @@ import { FastifyPluginAsync } from 'fastify';
 import { toNumber } from '../utils/currency';
 import { standardEmail } from '../utils/kontakt';
 import { zaehleFristenAmpel } from '../services/frist.service';
+import { makeAuth } from '../utils/auth';
 
 const dashboardRoutes: FastifyPluginAsync = async (server) => {
-  const auth = { preHandler: [server.authenticate] };
+  // Ueber makeAuth statt von Hand, damit die Pruefung der Kennungen im Pfad
+  // auch hier greift. Ohne Rollen: die Uebersicht steht jedem Angemeldeten offen.
+  const auth = makeAuth(server);
   const today = new Date();
 
   const zahlungInclude = {

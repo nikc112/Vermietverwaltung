@@ -21,7 +21,10 @@ function toSafeAbrechnung<T extends { pdfPfad?: string | null }>(obj: T): Omit<T
 }
 
 const nebenkostenRoutes: FastifyPluginAsync = async (server) => {
-  const auth = { preHandler: [server.authenticate] };
+  // makeAuth ohne Rollen: dieselbe Wirkung wie zuvor (nur angemeldet sein),
+  // aber ueber denselben Weg wie alle anderen Routen -- damit greift auch
+  // hier die Pruefung der Kennungen im Pfad.
+  const auth = makeAuth(server);
 
   server.post('/vorschau', auth, async (req, reply) => {
     const body = nebenkostenVorschauSchema.safeParse(req.body);
