@@ -297,18 +297,19 @@ jobs:
       # sieht sie nicht. Genau dort sucht der Sicherheitspruefer mit Trivy, und
       # genau dort wusste dieses Projekt bisher nichts ueber sich.
       #
-      # ignore-unfixed: gemeldet wird, wogegen es ein Update gibt. Eine Luecke
-      # ohne verfuegbaren Fix bricht den Lauf nicht -- sonst haenge die
-      # Veroeffentlichung an der Veroeffentlichungsgeschwindigkeit fremder
-      # Distributionen. Sie steht dann trotzdem im Bericht.
+      # Die Scans melden bewusst NICHT selbst einen Fehlschlag (exit-code 0).
+      # Sie schreiben ihren Befund als JSON, und ein eigener Schritt wertet ihn
+      # aus. Sonst stuende die Ursache nur in den Protokolldateien des Laufs --
+      # und die sind ohne Adminrechte am Repository nicht abrufbar.
       - name: Backend-Abbild auf bekannte Luecken pruefen
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: mietverwaltung-backend:lokal
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '1'
-          format: table
+          exit-code: '0'
+          format: json
+          output: trivy-backend.json
 
       - name: Frontend-Abbild auf bekannte Luecken pruefen
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -316,8 +317,9 @@ jobs:
           image-ref: mietverwaltung-frontend:lokal
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: '1'
-          format: table
+          exit-code: '0'
+          format: json
+          output: trivy-frontend.json
 
       # Ergaenzend das Repository selbst: Fehlkonfigurationen in Dockerfiles und
       # Compose-Dateien sowie versehentlich eingecheckte Geheimnisse.
@@ -328,8 +330,41 @@ jobs:
           scan-ref: .
           scanners: misconfig,secret
           severity: HIGH,CRITICAL
-          exit-code: '1'
-          format: table
+          exit-code: '0'
+          format: json
+          output: trivy-repo.json
+
+      - name: Trivy-Befunde auswerten
+        run: |
+          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            let anzahl = 0;
+            for (const datei of ['trivy-backend.json','trivy-frontend.json','trivy-repo.json']) {
+              if (!fs.existsSync(datei)) continue;
+              const bericht = JSON.parse(fs.readFileSync(datei,'utf8'));
+              for (const ziel of bericht.Results || []) {
+                for (const v of ziel.Vulnerabilities || []) {
+                  anzahl++;
+                  console.log('::error::' + [datei, ziel.Target, v.VulnerabilityID, v.PkgName,
+                    v.InstalledVersion + ' -> ' + (v.FixedVersion || 'kein Fix'), v.Severity].join(' | '));
+                }
+                for (const m of ziel.Misconfigurations || []) {
+                  anzahl++;
+                  console.log('::error::' + [datei, ziel.Target, m.ID, m.Title, m.Severity].join(' | '));
+                }
+                for (const g of ziel.Secrets || []) {
+                  anzahl++;
+                  console.log('::error::' + [datei, ziel.Target, g.RuleID, g.Title, g.Severity].join(' | '));
+                }
+              }
+            }
+            if (anzahl > 0) {
+              console.log('Trivy: ' + anzahl + ' behebbare Funde in HIGH/CRITICAL.');
+              process.exit(1);
+            }
+            console.log('Trivy: keine behebbaren Funde in HIGH/CRITICAL.');
+          "
 
       - name: Stapel abraeumen
         if: always()
