@@ -46,7 +46,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Der Benutzer "node" ist im Node-Abbild bereits vorhanden und hat die Kennung
 # 1000, dieselbe, die INSTALL.md fuer das Dokumentenverzeichnis auf dem Host
 # vorgibt.
-RUN mkdir -p /app/storage/pdfs /app/storage/dokumente && chown -R node:node /app
+# /app/tmp muss hier entstehen: liegt der Einhaengepunkt nicht im Abbild,
+# legt Docker ihn beim ersten Start als root an -- und die Texterkennung
+# koennte ihre Seitenrenderings nicht ablegen.
+RUN mkdir -p /app/storage/pdfs /app/storage/dokumente /app/tmp && chown -R node:node /app
 USER node
 
 EXPOSE 3000

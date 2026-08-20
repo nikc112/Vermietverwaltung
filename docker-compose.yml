@@ -95,6 +95,11 @@ services:
       # ab. Deshalb ein eigenes Volume statt des tmpfs: dort waeren es
       # Arbeitsspeicher, und ein langes Fax fuellte ihn.
       TMPDIR: /app/tmp
+      # Prisma prueft sonst beim Start auf neue Versionen und legt dafuer
+      # einen Vermerk im Heimatverzeichnis ab -- das liegt im
+      # schreibgeschuetzten Teil. Nebenbei spart es einen Netzzugriff
+      # beim Hochfahren, den eine Verwaltungssoftware nicht braucht.
+      CHECKPOINT_DISABLE: "1"
       # Adressen der vorgelagerten Proxys. Steht ein Reverse Proxy auf einer
       # anderen Maschine davor, dessen Adresse hier ergaenzen -- sonst wird sein
       # X-Forwarded-For verworfen und alle Nutzer gelten als ein Absender.
@@ -141,9 +146,11 @@ services:
     cap_drop:
       - ALL
     read_only: true
+    # Kein tmpfs auf /var/cache/nginx: das verdeckte die im Abbild angelegten
+    # Unterverzeichnisse. Die Zwischenverzeichnisse liegen stattdessen unter
+    # /tmp, siehe die temp_path-Zeilen in frontend/nginx.conf.
     tmpfs:
-      - /tmp:size=16m,mode=1777
-      - /var/cache/nginx:size=32m,mode=0755
+      - /tmp:size=48m,mode=1777
     depends_on:
       - backend
     # Innen 8080, weil der Container als Benutzer 101 laeuft und keine Ports

@@ -167,7 +167,11 @@ jobs:
 
       - name: Protokolle zeigen, falls etwas nicht hochkam
         if: failure()
-        run: docker compose logs
+        run: |
+          echo "===== Zustand der Dienste ====="
+          docker compose ps -a
+          echo "===== Protokolle ====="
+          docker compose logs --no-color --tail 200
 
       - name: Backend laeuft nicht als root
         run: |
