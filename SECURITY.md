@@ -170,6 +170,30 @@ den Lauf erfunden und werden mit dem Stapel verworfen.
 Vorgabepasswort in einem oeffentlichen Repository waere fuer jede Installation
 dasselbe -- und damit fuer jeden bekannt, der es vergisst.
 
+## Wie die Haertung nachgewiesen wird
+
+Ein Dockerfile zu lesen belegt nicht, unter welcher Kennung ein Prozess
+tatsaechlich laeuft. Deshalb startet die CI bei jedem Push den echten Stapel und
+prueft am laufenden Container:
+
+| Geprueft | |
+|---|---|
+| Backend laeuft nicht als root | belegt |
+| Frontend laeuft nicht als root | belegt |
+| Wurzeldateisystem ist schreibgeschuetzt | belegt |
+| Die Ablageorte sind trotzdem beschreibbar | belegt |
+| nginx-Konfiguration besteht `nginx -t` | belegt |
+| Sicherheitsheader gesetzt, kein `unsafe-eval`, kein HSTS ueber Klartext | belegt |
+| Anmeldung liefert ein Token | belegt |
+| Geschuetzte Route ohne Token: 401 | belegt |
+| Anmeldesperre greift trotz wechselnder Absenderadresse | belegt |
+| Fehlerantwort enthaelt keinen Ablagepfad | belegt |
+
+Schlaegt einer dieser Punkte fehl, entsteht kein Abbild. Das ist kein
+theoretischer Schutz: beim ersten Lauf dieser Pruefung ist genau das passiert,
+und dabei kam ein Fehler ans Licht, der jede Neuinstallation zum Scheitern
+gebracht haette (siehe Migration `001a_rollen_vorbereiten`).
+
 ## Selbst nachpruefen
 
 ```bash

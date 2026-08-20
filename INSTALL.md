@@ -191,10 +191,10 @@ eine ältere Version ist nach einer Migration nicht ohne Weiteres möglich.
 Eine feste Version statt `latest` wählen Sie über `IMAGE_TAG` in der `.env`:
 
 ```
-IMAGE_TAG=v1.1.0
+IMAGE_TAG=v1.1.1
 ```
 
-### Umstieg auf 1.1.0 — zwei einmalige Handgriffe
+### Umstieg auf 1.1.1 — zwei einmalige Handgriffe
 
 Ab dieser Version laufen beide Container **ohne Wurzelrechte**. Eine bestehende
 Installation muss dafür zwei Dinge nachziehen.
