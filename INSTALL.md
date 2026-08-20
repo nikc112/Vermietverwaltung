@@ -191,15 +191,15 @@ eine ältere Version ist nach einer Migration nicht ohne Weiteres möglich.
 Eine feste Version statt `latest` wählen Sie über `IMAGE_TAG` in der `.env`:
 
 ```
-IMAGE_TAG=1.1.3
+IMAGE_TAG=1.1.4
 ```
 
-**Ohne `v`.** Der Git-Tag heißt `v1.1.3`, das Image-Schild aber `1.1.3` — das
-Präfix wird beim Veröffentlichen abgeschnitten. `IMAGE_TAG=v1.1.3` führt zu
-`manifest unknown`. Verfügbar sind `1.1.3`, `1.1` (jeweils die neueste 1.1.x)
+**Ohne `v`.** Der Git-Tag heißt `v1.1.4`, das Image-Schild aber `1.1.4` — das
+Präfix wird beim Veröffentlichen abgeschnitten. `IMAGE_TAG=v1.1.4` führt zu
+`manifest unknown`. Verfügbar sind `1.1.4`, `1.1` (jeweils die neueste 1.1.x)
 und `latest`.
 
-### Umstieg auf 1.1.3 — zwei einmalige Handgriffe
+### Umstieg auf 1.1.4 — zwei einmalige Handgriffe
 
 Ab dieser Version laufen beide Container **ohne Wurzelrechte**. Eine bestehende
 Installation muss dafür zwei Dinge nachziehen.

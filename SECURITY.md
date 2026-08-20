@@ -86,6 +86,19 @@ Unabhaengig davon ist ein Paketmanager in einem Produktionscontainer schwer zu
 rechtfertigen: er kann Code aus dem Netz nachladen und ausfuehren. Genau das
 soll dort nichts koennen.
 
+## Systempakete der Grundabbilder
+
+Beide Produktionsstufen rufen `apk upgrade --no-cache`. Ohne das liefert ein
+Abbild die Systempakete aus, die am Tag der Veroeffentlichung des Grundabbilds
+darin lagen. Trivy meldete auf diesem Weg zehn behebbare HIGH-Luecken im
+Frontend -- OpenSSL, curl, expat, libxml2, c-ares --, an denen dieses Projekt
+keinen Anteil hat und die es dennoch ausgeliefert haette.
+
+Der Preis ist Reproduzierbarkeit: zwei Baulaeufe am selben Commit koennen
+unterschiedliche Paketstaende enthalten. Bei einer Anwendung, die
+Ausweiskopien und Bonitaetsauskuenfte verwaltet, wiegt der Patchstand
+schwerer. Die Entscheidung steht als Kommentar in beiden Dockerfiles.
+
 ## Container
 
 | | Backend | Frontend | Datenbank |
