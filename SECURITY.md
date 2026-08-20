@@ -68,6 +68,24 @@ Ein vollstaendiges Beispiel steht in `nginx/reverse-proxy-beispiel.conf`.
   403**, sonst liesse sich durch Hochzaehlen der ID herausfinden, an welcher
   Stelle ein sensibles Dokument liegt.
 
+## Kein Paketmanager im Produktionsabbild
+
+`npm`, `npx` und `corepack` sind aus dem Backend-Abbild entfernt. Zur Laufzeit
+wird keines davon gebraucht: der Entrypoint ruft `./node_modules/.bin/prisma`
+und `node dist/server.js`, der Healthcheck `node -e`.
+
+Der Anlass war ein Trivy-Befund, und er ist lehrreich: npm bringt seine eigenen
+Abhaengigkeiten mit -- `sigstore`, `minimatch`, `glob`, `ip-address`,
+`brace-expansion`, `cross-spawn` --, und zehn davon hatten offene
+HIGH-Meldungen. In der `package.json` dieses Projekts steht keines davon.
+**`npm audit` konnte sie nie sehen**, weil es nur den Abhaengigkeitsbaum der
+Anwendung kennt, nicht den Inhalt des Grundabbilds. Wer allein auf `npm audit`
+schaut, haelt ein Abbild fuer sauber, das zehn behebbare Luecken mitbringt.
+
+Unabhaengig davon ist ein Paketmanager in einem Produktionscontainer schwer zu
+rechtfertigen: er kann Code aus dem Netz nachladen und ausfuehren. Genau das
+soll dort nichts koennen.
+
 ## Container
 
 | | Backend | Frontend | Datenbank |

@@ -39,6 +39,25 @@ COPY --from=builder /app/dist ./dist
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# npm und corepack fliegen aus dem Produktionsabbild. Zur Laufzeit wird beides
+# nicht gebraucht: der Entrypoint ruft ./node_modules/.bin/prisma und
+# "node dist/server.js", der Healthcheck "node -e".
+#
+# Der Anlass war ein Trivy-Befund. npm bringt seine eigenen Abhaengigkeiten
+# mit -- sigstore, minimatch, glob, brace-expansion und weitere --, und zehn
+# davon hatten offene HIGH-Meldungen. In der package.json dieses Projekts steht
+# keines davon, "npm audit" konnte sie also nie sehen. Sie lagen einfach im
+# Grundabbild.
+#
+# Ein Paketmanager in einem Produktionscontainer ist ohnehin schwer zu
+# rechtfertigen: er kann Code aus dem Netz nachladen und ausfuehren. Genau das
+# soll dort nichts koennen.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack
+
 # Ab hier laeuft nichts mehr als root. Die Speicherverzeichnisse werden hier
 # angelegt und uebereignet, damit Docker sie beim ersten Anlegen eines Volumes
 # mit dieser Eigentuemerschaft uebernimmt -- sonst gehoerte das frische Volume
