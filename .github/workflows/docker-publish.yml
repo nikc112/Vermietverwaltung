@@ -87,12 +87,20 @@ jobs:
       # Bewusst mit psql statt "prisma migrate deploy": so laufen die Dateien
       # genau in der Form, in der sie im Repo stehen, ohne dass Prisma etwas
       # dazwischen uebersetzt. Reihenfolge ist die lexikografische der Ordner.
+      #
+      # --single-transaction ist keine Kleinigkeit, sondern der Kern: Prisma
+      # schickt eine Migrationsdatei als EINE implizite Transaktion. Ohne den
+      # Schalter committet psql jede Anweisung einzeln und ist damit
+      # nachsichtiger als die Produktion. Genau das hat einmal verdeckt, dass
+      # eine Migration einen frisch angelegten Enum-Wert in derselben
+      # Transaktion benutzte -- hier gruen, auf einer echten Neuinstallation
+      # gescheitert.
       - name: Migrationen der Reihe nach einspielen
         run: |
           set -euo pipefail
           for datei in backend/prisma/migrations/*/migration.sql; do
             echo "--- $datei"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$datei"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q --single-transaction -f "$datei"
           done
 
       # Prueft das Verhalten des Suchindex-Triggers: fuellt er den Vektor, laesst
@@ -319,10 +327,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ghcr.io verlangt Kleinschreibung, GITHUB_REPOSITORY behaelt aber die
-      # Schreibweise des Repositories. Ueber das Repository statt nur ueber den
-      # Kontoinhaber, damit ein Fork in seinen eigenen Namensraum schreibt --
-      # und damit dieses Repository nicht die Abbilder eines anderen ueberschreibt.
       - name: Image-Namen kleinschreiben
         id: repo
         run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
