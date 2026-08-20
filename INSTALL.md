@@ -191,8 +191,13 @@ eine ältere Version ist nach einer Migration nicht ohne Weiteres möglich.
 Eine feste Version statt `latest` wählen Sie über `IMAGE_TAG` in der `.env`:
 
 ```
-IMAGE_TAG=v1.1.1
+IMAGE_TAG=1.1.1
 ```
+
+**Ohne `v`.** Der Git-Tag heißt `v1.1.1`, das Image-Schild aber `1.1.1` — das
+Präfix wird beim Veröffentlichen abgeschnitten. `IMAGE_TAG=v1.1.1` führt zu
+`manifest unknown`. Verfügbar sind `1.1.1`, `1.1` (jeweils die neueste 1.1.x)
+und `latest`.
 
 ### Umstieg auf 1.1.1 — zwei einmalige Handgriffe
 
