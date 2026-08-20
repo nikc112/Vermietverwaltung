@@ -26,7 +26,11 @@ FROM node:20-alpine AS production
 WORKDIR /app
 # poppler-utils liefert pdftotext/pdftoppm/pdfinfo, tesseract-ocr die Texterkennung
 # mit deutschem Sprachpaket, unzip das Auslesen von DOCX/XLSX (beides ZIP-Behaelter).
-RUN apk add --no-cache dumb-init openssl poppler-utils tesseract-ocr tesseract-ocr-data-deu unzip
+# apk upgrade zuerst: sonst liefert das Abbild die Systempakete aus, die am
+# Tag der Veroeffentlichung des Grundabbilds darin lagen. Siehe die
+# ausfuehrlichere Begruendung im Dockerfile des Frontends.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache dumb-init openssl poppler-utils tesseract-ocr tesseract-ocr-data-deu unzip
 ENV NODE_ENV=production
 COPY package*.json ./
 COPY prisma ./prisma/
