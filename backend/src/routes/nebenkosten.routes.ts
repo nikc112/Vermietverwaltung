@@ -123,7 +123,11 @@ const nebenkostenRoutes: FastifyPluginAsync = async (server) => {
     return toSafeAbrechnung(await svc.getAbrechnung(server.prisma, parseInt(id)));
   });
 
-  server.delete('/abrechnungen/:id', auth, async (req) => {
+  // Loeschen ab Vertragsverwalter aufwaerts. Zuvor genuegte eine Anmeldung --
+  // das PDF einer Abrechnung zu LESEN war damit strenger geschuetzt als sie
+  // zu loeschen. Eine Abrechnung ist die Grundlage einer Forderung; sie
+  // verschwinden zu lassen ist die folgenreichere der beiden Handlungen.
+  server.delete('/abrechnungen/:id', makeAuth(server, ...ROLLEN.VERTRAGSVERWALTER), async (req) => {
     const { id } = req.params as { id: string };
     await svc.deleteAbrechnung(server.prisma, parseInt(id));
     return { message: 'Abrechnung gelöscht' };

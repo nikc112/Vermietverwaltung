@@ -99,6 +99,12 @@ unterschiedliche Paketstaende enthalten. Bei einer Anwendung, die
 Ausweiskopien und Bonitaetsauskuenfte verwaltet, wiegt der Patchstand
 schwerer. Die Entscheidung steht als Kommentar in beiden Dockerfiles.
 
+Daraus folgt eine zweite: **`latest` entsteht nur aus einem Versions-Tag**, nicht
+aus einem Push auf master. Kaeme es aus einem eigenen Lauf, zeigte es auf ein
+anderes Abbild als der gleichnamige Versions-Tag -- gemessen an den Digests war
+das bereits der Fall. So sind `latest` und die Version zwangslaeufig dasselbe
+Abbild.
+
 ## Container
 
 | | Backend | Frontend | Datenbank |

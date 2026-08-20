@@ -120,6 +120,28 @@ describe('Rechte ueber alle registrierten Routen', () => {
     expect(antwort.json().error).toMatch(/Anmeldedaten/);
   });
 
+  // Wer loeschen darf, ist eine Entscheidung ueber die Arbeitsteilung im Haus.
+  // Dieser Test schreibt sie fest, statt sie dem Zufall der naechsten Aenderung
+  // zu ueberlassen: der Kostenbuchhalter darf seine Kosten loeschen -- dafuer
+  // gibt es die Rolle --, sonst nichts.
+  const KOSTENBUCHER_DARF_LOESCHEN = new Set(['DELETE /api/v1/kosten/:id']);
+
+  it('laesst den Kostenbuchhalter nur loeschen, was ihm zusteht', async () => {
+    const loeschrouten = gefunden.filter((r) => r.methode === 'DELETE');
+    expect(loeschrouten.length).toBeGreaterThan(8);
+    const unerwartet: string[] = [];
+    for (const r of loeschrouten) {
+      const name = `${r.methode} ${r.pfad}`;
+      const antwort = await ruf(r, 'KOSTENBUCHER');
+      const abgewiesen = antwort.statusCode === 403;
+      const sollAbgewiesen = !KOSTENBUCHER_DARF_LOESCHEN.has(name);
+      if (abgewiesen !== sollAbgewiesen) {
+        unerwartet.push(`${name} -> ${antwort.statusCode} (erwartet: ${sollAbgewiesen ? '403' : 'kein 403'})`);
+      }
+    }
+    expect(unerwartet, `Loeschrechte weichen ab:\n${unerwartet.join('\n')}`).toEqual([]);
+  });
+
   it('weist krumme Kennungen im Pfad ab, auf jeder Route die eine hat', async () => {
     const mitKennung = gefunden.filter((r) => /:id|:vertragID/.test(r.pfad));
     expect(mitKennung.length).toBeGreaterThan(20);
