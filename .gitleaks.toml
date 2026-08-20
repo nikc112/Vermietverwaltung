@@ -1,0 +1,50 @@
+# Konfiguration fuer Gitleaks.
+#
+# Sie erweitert den mitgelieferten Regelsatz und schaltet keine einzige Regel
+# ab. Der gesamte Inhalt ist EINE eng gefasste Ausnahme fuer zwei alte Commits.
+#
+# Worum es geht
+# In der CI standen frueher vier feste Testwerte -- im Workflow und in zwei
+# Testdateien. Sie waren nie echte Geheimnisse: sie richteten eine
+# Wegwerf-Datenbank fuer einen Rauchtest ein, der am Ende jedes Laufs mit
+# "docker compose down -v" verschwindet. Aussehen tun sie trotzdem wie welche,
+# und weder ein Werkzeug noch ein Mensch, der die Datei ueberfliegt, kann den
+# Unterschied sehen. Deshalb entstehen sie inzwischen bei jedem Lauf neu
+# (.github/workflows/docker-publish.yml) bzw. zur Testlaufzeit
+# (backend/src/__tests__/umgebung.ts).
+#
+# Warum die Historie nicht umgeschrieben wurde
+# Sie stehen weiterhin in einem alten Commit. Die Historie dafuer umzuschreiben
+# waere unverhaeltnismaessig: es aenderte jeden Commit-Hash, entwertete jede
+# vorhandene Kopie des Repositories und jede Signatur -- fuer vier
+# Zeichenketten, die nie etwas geschuetzt haben.
+#
+# Warum Commits und nicht die Werte selbst
+# Eine Ausnahme koennte die vier Zeichenketten woertlich aufzaehlen. Dann
+# stuenden sie aber wieder in einer Datei des aktuellen Standes -- also genau
+# dort, wo sie nicht mehr hingehoeren. Die Ausnahme benennt deshalb die beiden
+# Commits.
+#
+# Was gemessen wurde (gitleaks 8.30.1)
+#   gitleaks git .   ueber die gesamte Historie:      0 Funde, auch ohne diese Datei
+#   gitleaks dir .   ueber den Stand VOR der Aenderung: 4 Funde
+#   gitleaks dir .   ueber den Stand danach:           0 Funde, auch ohne diese Datei
+# Der Diff-Modus erkennt diese Werte also gar nicht -- die Ausnahme ist Vorsorge
+# fuer den Fall, dass eine spaetere Version das aendert, und kein Deckmantel
+# fuer einen bestehenden Fund. Aus demselben Grund prueft die CI beide Modi.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ein alter Commit mit kuenstlichen CI-Testwerten. Keine Regel wird abgeschaltet, kein Wert wird allgemein erlaubt."
+
+commits = [
+  # feat: Sicherheitshaertung nach externem Prueferbericht (v1.1.0)
+  "c22e4083041e7f92cc4e17c65591b04731b90b0b",
+]
+
+# Die Platzhalter der Vorlage. Sie sind dafuer da, ersetzt zu werden.
+paths = [
+  '^\.env\.example$',
+]

@@ -139,6 +139,49 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  # Sucht Geheimnisse -- im aktuellen Stand UND in der gesamten Historie. Der
+  # Sicherheitspruefer tut genau das mit "gitleaks git .", also soll es hier
+  # auffallen und nicht erst dort.
+  #
+  # Bewusst die Binaerdatei statt der Action: gitleaks-action verlangt fuer
+  # Organisationen eine Lizenz. Version und Pruefsumme sind festgenagelt, damit
+  # kein fremder Stand hereinkommt.
+  geheimnisse:
+    name: Auf Geheimnisse pruefen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Die vollstaendige Historie, nicht nur der letzte Commit.
+          fetch-depth: 0
+
+      - name: Gitleaks holen und Pruefsumme vergleichen
+        env:
+          VERSION: 8.30.1
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          datei="gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -sfL -o "$datei"             "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${datei}"
+          echo "${SHA256}  ${datei}" | sha256sum -c -
+          tar -xzf "$datei" gitleaks
+          ./gitleaks version
+
+      # Beide Modi, und das ist keine Doppelung. "git" liest die Historie als
+      # Diffs, "dir" liest die Dateien, wie sie jetzt dastehen -- und die beiden
+      # finden nicht dasselbe. Nachgemessen an genau diesem Repository: die
+      # frueheren CI-Testwerte wurden von "dir" gefunden und von "git" nicht.
+      # Wer nur einen der beiden laufen laesst, prueft weniger, als er glaubt.
+      #
+      # --redact: ein Fund darf nicht dadurch oeffentlich werden, dass er im
+      # Protokoll eines oeffentlichen Laufs im Klartext steht.
+      - name: Historie pruefen
+        run: ./gitleaks git . --redact --config .gitleaks.toml --exit-code 1
+
+      - name: Aktuellen Stand pruefen
+        run: ./gitleaks dir . --redact --config .gitleaks.toml --exit-code 1
+
   # Startet den echten Stapel aus den echten Abbildern. Dieser Job ist der
   # Ersatz fuer eine lokale Docker-Umgebung: die Haertung (Nicht-root,
   # schreibgeschuetztes Wurzeldateisystem, nginx auf 8080) laesst sich nur am
@@ -161,11 +204,19 @@ jobs:
           mkdir -p ci-dokumente
           # 1000 ist der Benutzer "node" im Backend-Abbild.
           sudo chown -R 1000:1000 ci-dokumente
+          POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+          JWT_SECRET="$(openssl rand -hex 48)"
+          ADMIN_PASSWORD="$(openssl rand -hex 32)"
+          # Maskiert, damit die Werte in keiner Protokollzeile auftauchen koennen.
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "::add-mask::$JWT_SECRET"
+          echo "::add-mask::$ADMIN_PASSWORD"
+
           {
-            echo 'POSTGRES_PASSWORD=rauchtest-nur-fuer-die-ci'
-            echo 'JWT_SECRET=kY7pQz2mVx9RbT4wLn6HsA3jDf8gUeCiOtZ5'
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "JWT_SECRET=$JWT_SECRET"
             echo 'ADMIN_EMAIL=rauchtest@example.org'
-            echo 'ADMIN_PASSWORD=rauchtest-passwort-1234'
+            echo "ADMIN_PASSWORD=$ADMIN_PASSWORD"
             echo 'APP_PORT=8080'
             echo 'DOKUMENT_PFAD=./ci-dokumente'
           } > .env
@@ -255,9 +306,12 @@ jobs:
       - name: Anmeldung funktioniert
         run: |
           set -euo pipefail
+          # Aus der .env statt aus dieser Datei: die Zugangsdaten sind erst
+          # beim Lauf entstanden und stehen nirgends im Repository.
+          set -a; . ./.env; set +a
           curl -fsS -X POST http://localhost:8080/api/v1/auth/login \
             -H 'Content-Type: application/json' \
-            -d '{"email":"rauchtest@example.org","password":"rauchtest-passwort-1234"}' > anmeldung.json
+            -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" > anmeldung.json
           grep -q '"token"' anmeldung.json || { echo "kein Token in der Antwort"; exit 1; }
 
       - name: Geschuetzte Route ist ohne Anmeldung gesperrt
@@ -270,12 +324,15 @@ jobs:
       - name: Die Anmeldesperre greift trotz wechselnder Absenderadresse
         run: |
           set -euo pipefail
+          # Aus der .env statt aus dieser Datei: die Zugangsdaten sind erst
+          # beim Lauf entstanden und stehen nirgends im Repository.
+          set -a; . ./.env; set +a
           gesperrt=0
           for i in 1 2 3 4 5 6 7 8; do
             status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/v1/auth/login \
               -H 'Content-Type: application/json' \
               -H "X-Forwarded-For: 203.0.113.$i" \
-              -d "{\"email\":\"rauchtest@example.org\",\"password\":\"falsch-$i\"}")
+              -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"falsch-$i\"}")
             echo "Versuch $i (vorgetaeuschter Absender 203.0.113.$i): HTTP $status"
             if [ "$status" = "429" ]; then gesperrt=1; fi
           done
@@ -372,7 +429,7 @@ jobs:
 
   build-push:
     name: Abbilder bauen und veroeffentlichen
-    needs: [backend, frontend, rauchtest]
+    needs: [backend, frontend, geheimnisse, rauchtest]
     runs-on: ubuntu-latest
     # Nur dieser Job schreibt, und nur in die Registry.
     permissions:

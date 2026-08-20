@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { createSigner } from 'fast-jwt';
+import { randomBytes } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
 import authPlugin from '../plugins/auth';
 import { configSchema } from '../config.schema';
-import { erzeugeJwtOptionen, JWT_ALGORITHMUS } from '../utils/jwt';
+import { erzeugeJwtOptionen, JWT_ALGORITHMUS, pruefeGeheimnis, entropieBit } from '../utils/jwt';
 
 const GEHEIMNIS = process.env.JWT_SECRET as string;
 
@@ -63,7 +64,10 @@ describe('JWT-Authentifizierung', () => {
 
   it('lehnt ein Token mit falscher Signatur ab', async () => {
     const server = await baueServer();
-    const fremd = createSigner({ key: 'Xq4vNz8LcRt2WmYbJ7hPdA5sGf3KuEiO9nTr', algorithm: JWT_ALGORITHMUS });
+    // Ein fremder Schluessel, ebenfalls erst zur Laufzeit erzeugt -- damit
+    // steht auch hier keine Zeichenkette im Repository, die wie ein
+    // Geheimnis aussieht.
+    const fremd = createSigner({ key: randomBytes(36).toString('base64'), algorithm: JWT_ALGORITHMUS });
     const antwort = await ruf(server, fremd({ id: BENUTZER_IN_DB.id, rolle: 'ADMIN' }));
     expect(antwort.statusCode).toBe(401);
     await server.close();
@@ -77,6 +81,34 @@ describe('JWT-Authentifizierung', () => {
     }
     expect(configSchema.safeParse({ ...grundlage, JWT_SECRET: GEHEIMNIS }).success).toBe(true);
     expect(() => erzeugeJwtOptionen('', '7d')).toThrow(/mindestens/);
+  });
+
+  it('nimmt jede Ausgabe von "openssl rand" an', () => {
+    // Die vorige Regel verlangte 16 verschiedene Zeichen. Hex hat aber nur 16
+    // moegliche, und in 23 Prozent der Faelle kommen nicht alle davon vor --
+    // "openssl rand -hex 32" waere also in jedem vierten Fall als "zu
+    // eintoenig" abgewiesen worden, obwohl es 256 Bit liefert. Tausend Laeufe
+    // reichen, damit dieser Test bei einer Rueckkehr zur alten Regel praktisch
+    // sicher faellt.
+    for (let i = 0; i < 1000; i++) {
+      for (const geheimnis of [
+        randomBytes(32).toString('hex'),
+        randomBytes(48).toString('hex'),
+        randomBytes(36).toString('base64'),
+      ]) {
+        expect(pruefeGeheimnis(geheimnis), `abgelehnt: ${geheimnis}`).toBeNull();
+      }
+    }
+  });
+
+  it('weist eintoenige und gemusterte Geheimnisse weiterhin ab', () => {
+    // Der Grund, warum die Zeichenvielfalt nicht ersatzlos entfallen konnte:
+    // ein achtstelliges Muster, achtmal wiederholt, kommt auf 192 Bit und
+    // haette die reine Entropiepruefung bestanden.
+    for (const schlecht of ['a'.repeat(64), 'ab'.repeat(32), 'abcd1234'.repeat(8)]) {
+      expect(pruefeGeheimnis(schlecht), `durchgelassen: ${schlecht.slice(0, 16)}...`).not.toBeNull();
+    }
+    expect(entropieBit('a'.repeat(64))).toBe(0);
   });
 
   it('uebernimmt die Rolle aus der Datenbank, nicht aus dem Token', async () => {

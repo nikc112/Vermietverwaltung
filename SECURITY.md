@@ -36,8 +36,12 @@ Ein vollstaendiges Beispiel steht in `nginx/reverse-proxy-beispiel.conf`.
 - Signatur **HS256, fest verdrahtet** -- beim Signieren wie beim Pruefen. Der
   Algorithmus wird nicht aus dem Token uebernommen. Ohne diese Festlegung
   akzeptierte der Server ein mit HS512 signiertes Token; ein Test belegt das.
-- `JWT_SECRET` wird beim Start auf Laenge (min. 32), Zeichenvielfalt (min. 16
-  verschiedene) und Platzhalter geprueft. Der Container startet sonst nicht.
+- `JWT_SECRET` wird beim Start auf Laenge (min. 32), Informationsgehalt
+  (min. 128 Bit nach Shannon), Zeichenvielfalt (min. 10) und Platzhalter
+  geprueft. Der Container startet sonst nicht. Die Messung ersetzt eine
+  fruehere Regel, die 16 verschiedene Zeichen verlangte -- die haette
+  `openssl rand -hex 32` in 23 Prozent der Faelle abgewiesen, obwohl es
+  256 Bit liefert.
 - `verify.maxAge` begrenzt die Gueltigkeit zusaetzlich zum `exp`-Feld
   serverseitig.
 - **Die Rolle kommt bei jeder Anfrage frisch aus der Datenbank** und
@@ -237,8 +241,25 @@ Liegengebliebene Ordner raeumt die Anwendung beim Start selbst weg.
 ## Geheimnisse
 
 Im Repository liegen keine. `.env` steht in `.gitignore`, `.env.example`
-enthaelt ausschliesslich Platzhalter. Die Werte in der CI (`rauchtest`) sind fuer
-den Lauf erfunden und werden mit dem Stapel verworfen.
+enthaelt ausschliesslich Platzhalter.
+
+**Die Geheimnisse der CI entstehen bei jedem Lauf neu** (`openssl rand -hex`)
+und werden mit `::add-mask::` gegen jede Protokollausgabe gesperrt. Vorher
+standen dort vier feste Zeichenketten. Sie waren nie echte Geheimnisse -- sie
+richteten eine Wegwerf-Datenbank ein, die am Ende jedes Laufs verschwindet --,
+aber sie sahen aus wie welche, und diesen Unterschied kann weder ein Werkzeug
+noch ein Mensch beim Ueberfliegen sehen. Dasselbe gilt fuer die Testlaeufe:
+`backend/src/__tests__/umgebung.ts` erzeugt sein Geheimnis zur Laufzeit.
+
+In zwei alten Commits stehen die vier Werte weiterhin. Die Historie dafuer
+umzuschreiben waere unverhaeltnismaessig; `.gitleaks.toml` nennt stattdessen
+genau diese beiden Commits. Bewusst die Commits und nicht die Werte selbst:
+sonst stuenden sie wieder in einer Datei des aktuellen Standes.
+
+Die CI prueft bei jedem Lauf mit Gitleaks, und zwar in **beiden** Modi. Das ist
+keine Doppelung -- gemessen an diesem Repository fand `gitleaks dir` die vier
+Werte, `gitleaks git` nicht. Wer nur einen laufen laesst, prueft weniger, als
+er glaubt.
 
 `POSTGRES_PASSWORD`, `JWT_SECRET`, `ADMIN_EMAIL` und `ADMIN_PASSWORD` haben
 **keine** Vorgabewerte: fehlt einer, startet der Stapel nicht. Ein
