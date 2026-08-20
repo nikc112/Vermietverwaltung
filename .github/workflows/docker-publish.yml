@@ -162,8 +162,13 @@ jobs:
             echo 'DOKUMENT_PFAD=./ci-dokumente'
           } > .env
 
-      - name: Stapel bauen und starten
-        run: docker compose up -d --build --wait --wait-timeout 300
+      # Bewusst getrennt von "starten": schlaegt schon das Bauen fehl, sagt das
+      # der Schrittname, ohne dass man die Protokolldateien des Laufs braucht.
+      - name: Abbilder bauen
+        run: docker compose build
+
+      - name: Stapel starten
+        run: docker compose up -d --wait --wait-timeout 300
 
       - name: Protokolle zeigen, falls etwas nicht hochkam
         if: failure()
@@ -171,7 +176,12 @@ jobs:
           echo "===== Zustand der Dienste ====="
           docker compose ps -a
           echo "===== Protokolle ====="
-          docker compose logs --no-color --tail 200
+          docker compose logs --no-color --tail 300 | tee protokoll.txt
+          echo "===== Auffaellige Zeilen als Annotation ====="
+          # Annotationen sind ueber die API auch ohne Zugriff auf die
+          # Protokolldateien des Laufs lesbar. Ohne sie bleibt bei einem
+          # Fehlschlag nur Raten, woran es lag.
+          grep -inE "error|emerg|fatal|denied|read-only|no such file|cannot|exited|unhealthy" protokoll.txt             | tail -25 | while IFS= read -r zeile; do echo "::error::$zeile"; done || true
 
       - name: Backend laeuft nicht als root
         run: |
